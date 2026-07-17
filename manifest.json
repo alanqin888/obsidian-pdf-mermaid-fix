@@ -1,7 +1,7 @@
 {
 	"id": "pdf-mermaid-fix",
-	"name": "MD Export (PDF & Word)",
-	"version": "1.0.1",
+	"name": "MD Export Pro",
+	"version": "1.0.2",
 	"minAppVersion": "0.15.0",
 	"description": "Fixes Mermaid diagram truncation in PDF export, and adds Python-powered Word export.",
 	"author": "Alan",
