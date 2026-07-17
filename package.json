@@ -1,0 +1,21 @@
+{
+  "name": "md-to-pdf",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "builtin-modules": "^5.3.0",
+    "esbuild": "^0.28.1",
+    "obsidian": "^1.13.1",
+    "tslib": "^2.8.1",
+    "typescript": "^7.0.2"
+  }
+}
