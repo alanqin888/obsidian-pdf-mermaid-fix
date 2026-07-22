@@ -7,7 +7,7 @@ interface PluginSettings {
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
-	pythonScriptPath: ''
+	pythonScriptPath: '/Users/alanqin/.hermes/skills/md-to-docx/scripts/md_to_docx.py'
 }
 
 export default class PdfMermaidFixPlugin extends Plugin {
@@ -114,33 +114,37 @@ export default class PdfMermaidFixPlugin extends Plugin {
 			}
 			styleEl.textContent = `
 			@media print {
-				/* 防止标题孤立在页尾 (Avoid orphan headings) */
+				/* 防止标题及其包裹层孤立在页尾 (Avoid orphan headings) */
 				h1, h2, h3, h4, h5, h6,
+				.heading-wrapper,
 				.markdown-rendered h1,
 				.markdown-rendered h2,
 				.markdown-rendered h3,
-				.markdown-rendered h4 {
+				.markdown-rendered h4,
+				.markdown-rendered .heading-wrapper {
 					break-after: avoid !important;
 					page-break-after: avoid !important;
 				}
 
 				/* Mermaid 容器样式优化 */
-				.mermaid, .block-language-mermaid {
+				.mermaid, .block-language-mermaid, div[data-type="mermaid"] {
 					break-inside: avoid !important;
 					page-break-inside: avoid !important;
 					display: flex !important;
 					justify-content: center !important;
 					align-items: center !important;
-					margin: 1em auto !important;
+					margin: 0.8em auto !important;
 				}
 
-				/* 限制 SVG 宽高：既防横向超出，又防纵向超出 A4 高度被截断 */
-				.mermaid svg {
+				/* 限制 SVG 宽高：最大高度设为 18cm，确保标题 + 流程图能完美在一页 A4 内放下 */
+				.mermaid svg, .block-language-mermaid svg, div[data-type="mermaid"] svg {
 					max-width: 100% !important;
-					max-height: 22cm !important;
+					max-height: 18cm !important;
 					width: auto !important;
 					height: auto !important;
 					object-fit: contain !important;
+					display: block !important;
+					margin: 0 auto !important;
 				}
 
 				/* 防止表格与代码块断裂 */

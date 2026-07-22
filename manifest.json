@@ -1,7 +1,7 @@
 {
 	"id": "pdf-mermaid-fix",
 	"name": "MD Export Pro",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"minAppVersion": "0.15.0",
 	"description": "Fixes Mermaid diagram truncation, orphan headings, and vertical page overflow in PDF export, with optional Word export.",
 	"author": "Alan",
