@@ -105,22 +105,51 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	async exportToPdf(file: TFile) {
 		new Notice('Applying Mermaid PDF Fix and opening native export...');
 		try {
-			// 1. Inject the print CSS fix for Mermaid
+			// 1. Inject the comprehensive print CSS fix for Mermaid & page layout
 			let styleEl = document.getElementById('mermaid-pdf-fix');
 			if (!styleEl) {
 				styleEl = document.createElement('style');
 				styleEl.id = 'mermaid-pdf-fix';
-				styleEl.textContent = `
-				@media print {
-					.mermaid svg {
-						max-width: 100% !important;
-						height: auto !important;
-						page-break-inside: avoid;
-					}
-				}
-				`;
 				document.head.appendChild(styleEl);
 			}
+			styleEl.textContent = `
+			@media print {
+				/* 防止标题孤立在页尾 (Avoid orphan headings) */
+				h1, h2, h3, h4, h5, h6,
+				.markdown-rendered h1,
+				.markdown-rendered h2,
+				.markdown-rendered h3,
+				.markdown-rendered h4 {
+					break-after: avoid !important;
+					page-break-after: avoid !important;
+				}
+
+				/* Mermaid 容器样式优化 */
+				.mermaid, .block-language-mermaid {
+					break-inside: avoid !important;
+					page-break-inside: avoid !important;
+					display: flex !important;
+					justify-content: center !important;
+					align-items: center !important;
+					margin: 1em auto !important;
+				}
+
+				/* 限制 SVG 宽高：既防横向超出，又防纵向超出 A4 高度被截断 */
+				.mermaid svg {
+					max-width: 100% !important;
+					max-height: 22cm !important;
+					width: auto !important;
+					height: auto !important;
+					object-fit: contain !important;
+				}
+
+				/* 防止表格与代码块断裂 */
+				table, pre {
+					break-inside: avoid !important;
+					page-break-inside: avoid !important;
+				}
+			}
+			`;
 
 			// 2. We use Obsidian's native PDF export command
 			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
