@@ -7,7 +7,7 @@ interface PluginSettings {
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
-	pythonScriptPath: '/Users/alanqin/.hermes/skills/md-to-docx/scripts/md_to_docx.py'
+	pythonScriptPath: ''
 }
 
 export default class PdfMermaidFixPlugin extends Plugin {
@@ -169,10 +169,6 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	}
 
 	async exportToWord(file: TFile) {
-		if (!this.settings.pythonScriptPath) {
-			new Notice('Please configure the Python script path in settings first.');
-			return;
-		}
 		new Notice('Starting Word export via Python script...');
 		try {
 			const adapter = this.app.vault.adapter as any;
@@ -184,7 +180,10 @@ export default class PdfMermaidFixPlugin extends Plugin {
 			const absoluteInputPath = path.join(basePath, file.path);
 			const absoluteOutputPath = absoluteInputPath.replace(/\.md$/, '.docx');
 
-			const scriptPath = this.settings.pythonScriptPath;
+			// 动态解析自带的脚本路径，如果设置项为空，则默认使用插件目录下的脚本
+			const pluginDir = path.join(basePath, this.app.vault.configDir, 'plugins', this.manifest.id);
+			const bundledScriptPath = path.join(pluginDir, 'md_to_docx.py');
+			const scriptPath = this.settings.pythonScriptPath || bundledScriptPath;
 			
 			// 解决 macOS GUI 应用环境变量 PATH 缺失的问题，尝试多个常见 Python 路径
 			const pythonPaths = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
@@ -200,9 +199,19 @@ export default class PdfMermaidFixPlugin extends Plugin {
 				exec(cmd, (error, stdout, stderr) => {
 					if (error) {
 						console.error(`exec error with ${py}: ${error}`);
+						
 						// 127 通常表示命令未找到 (Command not found)
 						if (error.code === 127 || error.message.includes('not found') || error.message.includes('ENOENT')) {
 							tryRun(index + 1);
+							return;
+						}
+
+						// 检查是否缺少必要的 Python 库
+						const fullErr = error.message + '\n' + (stderr || '');
+						if (fullErr.includes("No module named 'docx'")) {
+							new Notice('Word export failed: Missing Python package "python-docx". Please run "pip install python-docx Pillow" in terminal.', 10000);
+						} else if (fullErr.includes("No module named 'PIL'") || fullErr.includes("No module named 'Pillow'")) {
+							new Notice('Word export failed: Missing Python package "Pillow". Please run "pip install python-docx Pillow" in terminal.', 10000);
 						} else {
 							new Notice(`Word export failed: ${error.message}`);
 						}
@@ -237,9 +246,9 @@ class MdExportSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Python script path')
-			.setDesc('Absolute path to your md_to_docx.py script (Required for Word export).')
+			.setDesc('Absolute path to your md_to_docx.py script (Leave empty to use the built-in bundled script).')
 			.addText(text => text
-				.setPlaceholder('/path/to/md_to_docx.py')
+				.setPlaceholder('Leave empty to use default bundled script')
 				.setValue(this.plugin.settings.pythonScriptPath)
 				.onChange(async (value) => {
 					this.plugin.settings.pythonScriptPath = value;
