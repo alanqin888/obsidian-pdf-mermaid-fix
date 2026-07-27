@@ -185,19 +185,37 @@ export default class PdfMermaidFixPlugin extends Plugin {
 			const absoluteOutputPath = absoluteInputPath.replace(/\.md$/, '.docx');
 
 			const scriptPath = this.settings.pythonScriptPath;
-			const cmd = `python3 "${scriptPath}" "${absoluteInputPath}" -o "${absoluteOutputPath}"`;
-
-			exec(cmd, (error, stdout, stderr) => {
-				if (error) {
-					console.error(`exec error: ${error}`);
-					new Notice('Word export failed. Check console for details.');
+			
+			// 解决 macOS GUI 应用环境变量 PATH 缺失的问题，尝试多个常见 Python 路径
+			const pythonPaths = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
+			
+			const tryRun = (index: number) => {
+				if (index >= pythonPaths.length) {
+					new Notice('Word export failed. Python3 not found in standard paths.');
 					return;
 				}
-				if (stderr) {
-					console.warn(`stderr: ${stderr}`);
-				}
-				new Notice('Word export complete! Saved as: ' + file.path.replace(/\.md$/, '.docx'));
-			});
+				const py = pythonPaths[index];
+				const cmd = `"${py}" "${scriptPath}" "${absoluteInputPath}" -o "${absoluteOutputPath}"`;
+
+				exec(cmd, (error, stdout, stderr) => {
+					if (error) {
+						console.error(`exec error with ${py}: ${error}`);
+						// 127 通常表示命令未找到 (Command not found)
+						if (error.code === 127 || error.message.includes('not found') || error.message.includes('ENOENT')) {
+							tryRun(index + 1);
+						} else {
+							new Notice(`Word export failed: ${error.message}`);
+						}
+						return;
+					}
+					if (stderr) {
+						console.warn(`stderr: ${stderr}`);
+					}
+					new Notice('Word export complete! Saved as: ' + file.path.replace(/\.md$/, '.docx'));
+				});
+			};
+
+			tryRun(0);
 		} catch (error) {
 			console.error(error);
 			new Notice('An error occurred while preparing Word export.');
