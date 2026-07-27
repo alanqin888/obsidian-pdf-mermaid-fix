@@ -185,8 +185,8 @@ export default class PdfMermaidFixPlugin extends Plugin {
 			const bundledScriptPath = path.join(pluginDir, 'md_to_docx.py');
 			const scriptPath = this.settings.pythonScriptPath || bundledScriptPath;
 			
-			// 解决 macOS GUI 应用环境变量 PATH 缺失的问题，尝试多个常见 Python 路径
-			const pythonPaths = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
+			// 解决 macOS GUI 应用环境变量 PATH 缺失的问题，优先尝试 Homebrew 路径，最后尝试系统自带 python3
+			const pythonPaths = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', 'python3'];
 			
 			const tryRun = (index: number) => {
 				if (index >= pythonPaths.length) {
