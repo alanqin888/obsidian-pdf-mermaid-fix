@@ -1,4 +1,4 @@
-# Obsidian PDF Mermaid Fix
+# MD Export Pro
 
 An ultra-lightweight Obsidian plugin that fixes the annoying issue where wide Mermaid diagrams (like sequence diagrams) get horizontally truncated/cut off when using Obsidian's native "Export to PDF" feature.
 
