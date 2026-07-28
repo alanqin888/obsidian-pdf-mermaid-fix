@@ -1,4 +1,4 @@
-import { App, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, FileSystemAdapter, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 import { exec } from 'child_process';
 import * as path from 'path';
 
@@ -8,6 +8,12 @@ interface PluginSettings {
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	pythonScriptPath: ''
+}
+
+interface ObsidianApp extends App {
+	commands: {
+		executeCommandById(id: string): void;
+	};
 }
 
 export default class PdfMermaidFixPlugin extends Plugin {
@@ -25,7 +31,7 @@ export default class PdfMermaidFixPlugin extends Plugin {
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (markdownView && markdownView.file) {
 					if (!checking) {
-						this.exportToWord(markdownView.file);
+						void this.exportToWord(markdownView.file);
 					}
 					return true;
 				}
@@ -34,13 +40,13 @@ export default class PdfMermaidFixPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: 'export-to-pdf-mermaid-fix',
+			id: 'export-to-pdf',
 			name: 'Export active file to PDF (Mermaid Fix)',
 			checkCallback: (checking: boolean) => {
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (markdownView && markdownView.file) {
 					if (!checking) {
-						this.exportToPdf(markdownView.file);
+						void this.exportToPdf(markdownView.file);
 					}
 					return true;
 				}
@@ -55,12 +61,16 @@ export default class PdfMermaidFixPlugin extends Plugin {
 					menu.addItem((item) => {
 						item.setTitle('Export to Word')
 							.setIcon('document')
-							.onClick(() => this.exportToWord(file));
+							.onClick(() => {
+								void this.exportToWord(file);
+							});
 					});
 					menu.addItem((item) => {
 						item.setTitle('Export to PDF (Mermaid Fix)')
 							.setIcon('pdf-file')
-							.onClick(() => this.exportToPdf(file));
+							.onClick(() => {
+								void this.exportToPdf(file);
+							});
 					});
 				}
 			})
@@ -74,12 +84,16 @@ export default class PdfMermaidFixPlugin extends Plugin {
 					menu.addItem((item) => {
 						item.setTitle('Export to Word')
 							.setIcon('document')
-							.onClick(() => this.exportToWord(file));
+							.onClick(() => {
+								void this.exportToWord(file);
+							});
 					});
 					menu.addItem((item) => {
 						item.setTitle('Export to PDF (Mermaid Fix)')
 							.setIcon('pdf-file')
-							.onClick(() => this.exportToPdf(file));
+							.onClick(() => {
+								void this.exportToPdf(file);
+							});
 					});
 				}
 			})
@@ -87,15 +101,11 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	}
 
 	onunload() {
-		// 移除注入的 CSS
-		const styleEl = document.getElementById('mermaid-pdf-fix');
-		if (styleEl) {
-			styleEl.remove();
-		}
+		// No style elements to clean up because we use static styles.css
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as PluginSettings;
 	}
 
 	async saveSettings() {
@@ -105,74 +115,27 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	async exportToPdf(file: TFile) {
 		new Notice('Applying Mermaid PDF Fix and opening native export...');
 		try {
-			// 1. Inject the comprehensive print CSS fix for Mermaid & page layout
-			let styleEl = document.getElementById('mermaid-pdf-fix');
-			if (!styleEl) {
-				styleEl = document.createElement('style');
-				styleEl.id = 'mermaid-pdf-fix';
-				document.head.appendChild(styleEl);
-			}
-			styleEl.textContent = `
-			@media print {
-				/* 防止标题及其包裹层孤立在页尾 (Avoid orphan headings) */
-				h1, h2, h3, h4, h5, h6,
-				.heading-wrapper,
-				.markdown-rendered h1,
-				.markdown-rendered h2,
-				.markdown-rendered h3,
-				.markdown-rendered h4,
-				.markdown-rendered .heading-wrapper {
-					break-after: avoid !important;
-					page-break-after: avoid !important;
-				}
+			// CSS is now loaded automatically by Obsidian from styles.css
 
-				/* Mermaid 容器样式优化 */
-				.mermaid, .block-language-mermaid, div[data-type="mermaid"] {
-					break-inside: avoid !important;
-					page-break-inside: avoid !important;
-					display: flex !important;
-					justify-content: center !important;
-					align-items: center !important;
-					margin: 0.8em auto !important;
-				}
-
-				/* 限制 SVG 宽高：最大高度设为 18cm，确保标题 + 流程图能完美在一页 A4 内放下 */
-				.mermaid svg, .block-language-mermaid svg, div[data-type="mermaid"] svg {
-					max-width: 100% !important;
-					max-height: 18cm !important;
-					width: auto !important;
-					height: auto !important;
-					object-fit: contain !important;
-					display: block !important;
-					margin: 0 auto !important;
-				}
-
-				/* 防止表格与代码块断裂 */
-				table, pre {
-					break-inside: avoid !important;
-					page-break-inside: avoid !important;
-				}
-			}
-			`;
-
-			// 2. We use Obsidian's native PDF export command
+			// We use Obsidian's native PDF export command
 			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (activeView && activeView.file === file) {
-				(this.app as any).commands.executeCommandById('workspace:export-pdf');
+				(this.app as ObsidianApp).commands.executeCommandById('workspace:export-pdf');
 			} else {
 				new Notice('Please open the file to export it to PDF.');
 			}
 		} catch (error) {
-			console.error(error);
-			new Notice('Failed to trigger PDF export');
+			const err = error as Error;
+			console.error(err);
+			new Notice(`Failed to trigger PDF export: ${err.message}`);
 		}
 	}
 
 	async exportToWord(file: TFile) {
 		new Notice('Starting Word export via Python script...');
 		try {
-			const adapter = this.app.vault.adapter as any;
-			if (!adapter.getBasePath) {
+			const adapter = this.app.vault.adapter;
+			if (!(adapter instanceof FileSystemAdapter)) {
 				new Notice('Error: Cannot determine vault absolute path.');
 				return;
 			}
@@ -198,7 +161,7 @@ export default class PdfMermaidFixPlugin extends Plugin {
 
 				exec(cmd, (error, stdout, stderr) => {
 					if (error) {
-						console.error(`exec error with ${py}: ${error}`);
+						console.error(`exec error with ${py}: ${error.message}`);
 						
 						// 127 通常表示命令未找到 (Command not found)
 						if (error.code === 127 || error.message.includes('not found') || error.message.includes('ENOENT')) {
@@ -226,8 +189,9 @@ export default class PdfMermaidFixPlugin extends Plugin {
 
 			tryRun(0);
 		} catch (error) {
-			console.error(error);
-			new Notice('An error occurred while preparing Word export.');
+			const err = error as Error;
+			console.error(err);
+			new Notice(`An error occurred while preparing Word export: ${err.message}`);
 		}
 	}
 }
