@@ -471,96 +471,89 @@ def add_editable_process_cards(doc: Document, steps: list[dict[str, str | list[s
 
     caption_p = doc.add_paragraph()
     caption_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    set_paragraph_spacing(caption_p, before=14, after=8)
-    caption_run = caption_p.add_run("📝 【可编辑流程卡片与步骤明细（可在 Word 内直接修改文本/排版）】")
-    set_run_font(caption_run, size=11, bold=True, color=PRIMARY)
+    set_paragraph_spacing(caption_p, before=16, after=8)
+    caption_run = caption_p.add_run("📝 【流程步骤明细与可编辑卡片（右键上方流程图可直接选择‘转换为形状’编辑）】")
+    set_run_font(caption_run, size=10.5, bold=True, color=PRIMARY)
 
     for idx, step in enumerate(steps):
         title = step["title"]
         nodes = step["nodes"]
 
-        # 创建单列步骤卡片表格
-        table = doc.add_table(rows=2, cols=1)
-        table.autofit = True
-        set_table_borders(table)
+        # 无边框卡片段落
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(0.6)
+        set_paragraph_spacing(p, before=6, after=2, line=1.35)
+        set_paragraph_callout_style(p, fill_color="F8FAFC", border_color=PRIMARY if idx % 2 == 0 else ACCENT)
 
-        # 1. 标题行
-        header_cell = table.rows[0].cells[0]
-        clear_cell(header_cell)
-        hp = header_cell.paragraphs[0]
-        hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        hrun = hp.add_run(f"📌 {title}")
-        set_run_font(hrun, size=11, bold=True, color="FFFFFF")
-        header_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        set_cell_margins(header_cell, top=140, start=180, bottom=140, end=180)
-        set_cell_shading(header_cell, TABLE_HEADER_BG)
+        # 序号胶囊徽章
+        badge_run = p.add_run(f" 步骤 {idx + 1:02d} ")
+        set_run_font(badge_run, size=9, bold=True, color="FFFFFF")
+        
+        # 步骤标题
+        title_run = p.add_run(f"  {title}")
+        set_run_font(title_run, size=11, bold=True, color=PRIMARY)
 
-        # 2. 内容行
-        body_cell = table.rows[1].cells[0]
-        clear_cell(body_cell)
-        set_cell_margins(body_cell, top=140, start=180, bottom=140, end=180)
-        set_cell_shading(body_cell, "F8FAFC")
-
-        for n_idx, node_raw in enumerate(nodes):
-            bp = body_cell.paragraphs[0] if n_idx == 0 else body_cell.add_paragraph()
-            set_paragraph_spacing(bp, before=4 if n_idx > 0 else 0, after=4, line=1.35)
-
-            # 解析节点文本，处理 <br> 换行
+        # 节点详细内容
+        for node_raw in nodes:
             lines = [l.strip() for l in node_raw.split("<br>") if l.strip()]
-            for l_idx, line in enumerate(lines):
-                if l_idx > 0:
-                    bp = body_cell.add_paragraph()
-                    set_paragraph_spacing(bp, before=2, after=4, line=1.35)
+            for line in lines:
+                np = doc.add_paragraph()
+                np.paragraph_format.left_indent = Cm(1.0)
+                set_paragraph_spacing(np, before=2, after=4, line=1.35)
+                set_paragraph_callout_style(np, fill_color="F8FAFC", border_color="E2E8F0")
 
                 if line.startswith("•") or line.startswith("-") or line.startswith("*"):
                     bullet_text = line.lstrip("•-* ").strip()
-                    prefix = bp.add_run("  • ")
+                    prefix = np.add_run("• ")
                     set_run_font(prefix, size=10, bold=True, color=ACCENT)
-                    add_formatted_text(bp, bullet_text, default_size=10, default_color="1F2937")
+                    add_formatted_text(np, bullet_text, default_size=10, default_color="1F2937")
                 else:
-                    add_formatted_text(bp, line, default_size=10.5, default_color="1F2937")
+                    add_formatted_text(np, line, default_size=10.5, default_color="1F2937")
 
-        # 卡片后间距
-        p_space = doc.add_paragraph()
-        set_paragraph_spacing(p_space, after=4)
-
-        # 如果不是最后一个步骤，插入流程向下指示箭头
         if idx < len(steps) - 1:
             arrow_p = doc.add_paragraph()
             arrow_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            set_paragraph_spacing(arrow_p, before=2, after=6)
-            arrow_run = arrow_p.add_run("↓ 业务流转进入下一步")
-            set_run_font(arrow_run, size=9.5, bold=True, color=ACCENT)
+            set_paragraph_spacing(arrow_p, before=4, after=4)
+            arrow_run = arrow_p.add_run("↓ 业务流转")
+            set_run_font(arrow_run, size=9, bold=True, color=ACCENT)
 
 
 def add_mermaid_image(doc: Document, mermaid_code: str):
     png_data = None
-    # 1. 优先使用官方推荐的 mermaid.ink JSON Base64 接口
+    svg_data = None
+
+    # 1. 抓取 SVG 矢量数据与 PNG 降级数据
     try:
         graph_dict = {"code": mermaid_code.strip(), "mermaid": {"theme": "default"}}
-        json_str = json.dumps(graph_dict)
-        base64_str = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
-        url = f"https://mermaid.ink/img/{base64_str}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            png_data = response.read()
-    except Exception as e:
-        print(f"mermaid.ink render failed: {e}")
+        base64_str = base64.b64encode(json.dumps(graph_dict).encode("utf-8")).decode("utf-8")
+        
+        svg_url = f"https://mermaid.ink/svg/{base64_str}"
+        png_url = f"https://mermaid.ink/img/{base64_str}"
 
-    # 2. 备用渲染方案：kroki.io API
-    if not png_data:
+        req_svg = urllib.request.Request(svg_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req_svg, timeout=15) as resp:
+            svg_data = resp.read()
+
+        req_png = urllib.request.Request(png_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req_png, timeout=15) as resp:
+            png_data = resp.read()
+    except Exception as e:
+        print(f"mermaid.ink fetch failed: {e}")
+
+    # 备用 kroki
+    if not svg_data or not png_data:
         try:
-            req = urllib.request.Request(
+            req_kroki = urllib.request.Request(
                 "https://kroki.io/mermaid/png",
                 data=mermaid_code.strip().encode("utf-8"),
                 headers={"Content-Type": "text/plain; charset=utf-8", "User-Agent": "Mozilla/5.0"}
             )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                png_data = response.read()
+            with urllib.request.urlopen(req_kroki, timeout=15) as resp:
+                png_data = resp.read()
         except Exception as e:
-            print(f"kroki render failed: {e}")
+            print(f"kroki fetch failed: {e}")
 
-    # 绘制渲染得到的 PNG 图片
+    # 绘制图形：插入包含 SVG 矢量的图片节点（支持 Word 右键“转换为形状”）
     if png_data:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -568,10 +561,29 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         run = paragraph.add_run()
         image_stream = io.BytesIO(png_data)
         run.add_picture(image_stream, width=Cm(15.8))
+
+        # 如果成功获取了 SVG，将矢量 SVGBlip 附加进 OpenXML
+        if svg_data:
+            try:
+                from docx.opc.constants import RELATIONSHIP_TYPE
+                from docx.opc.packuri import PackURI
+                from docx.opc.part import Part
+                from docx.oxml import parse_xml
+
+                part_count = len(doc.part.package.parts)
+                svg_pack_uri = PackURI(f"/word/media/image_svg_{part_count}.svg")
+                svg_part = Part(svg_pack_uri, "image/svg+xml", svg_data, doc.part.package)
+                svg_rId = doc.part.relate_to(svg_part, RELATIONSHIP_TYPE.IMAGE)
+
+                blip = run._r.xpath(".//a:blip")[0]
+                svg_blip_xml = f'<asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="{svg_rId}"/>'
+                blip.append(parse_xml(svg_blip_xml))
+            except Exception as svg_err:
+                print(f"Failed to attach SVG blip: {svg_err}")
     else:
         add_quote(doc, f"[Mermaid 流程图代码]:\n{mermaid_code}")
 
-    # 3. 提取 Mermaid 流程步骤，双重生成 Word 原生可编辑步骤卡片（保留图片 + 可编辑表格双选模式）
+    # 提取 Mermaid 流程步骤，生成极简无边框明细
     steps = parse_mermaid_steps(mermaid_code)
     if steps:
         add_editable_process_cards(doc, steps)
