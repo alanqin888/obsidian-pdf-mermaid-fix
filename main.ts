@@ -113,17 +113,71 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	}
 
 	async exportToPdf(file: TFile) {
-		new Notice('Applying Mermaid PDF Fix and opening native export...');
+		new Notice('Applying Mermaid PDF Fix and generating TOC for export...');
 		try {
-			// CSS is now loaded automatically by Obsidian from styles.css
-
-			// We use Obsidian's native PDF export command
 			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (activeView && activeView.file === file) {
-				(this.app as ObsidianApp).commands.executeCommandById('workspace:export-pdf');
-			} else {
+			if (!activeView || activeView.file !== file) {
 				new Notice('Please open the file to export it to PDF.');
+				return;
 			}
+
+			// 1. 扫描当前视图中的所有标题并赋予唯一 ID 锚点
+			const container = activeView.contentEl;
+			const headings = Array.from(container.querySelectorAll<HTMLElement>('h1, h2, h3, .markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3'));
+			
+			let tocContainer: HTMLElement | null = null;
+
+			if (headings.length > 0) {
+				tocContainer = document.createElement('div');
+				tocContainer.className = 'pdf-toc-container';
+
+				const titleEl = document.createElement('div');
+				titleEl.className = 'pdf-toc-title';
+				titleEl.textContent = '目录 / Table of Contents';
+				tocContainer.appendChild(titleEl);
+
+				const listEl = document.createElement('ul');
+				listEl.className = 'pdf-toc-list';
+
+				headings.forEach((heading, idx) => {
+					// 忽略隐藏或原本就在目录容器里的标题
+					if (heading.closest('.pdf-toc-container')) return;
+
+					let headingId = heading.id;
+					if (!headingId) {
+						headingId = `pdf-heading-${idx}-${Date.now()}`;
+						heading.id = headingId;
+					}
+
+					const tag = heading.tagName.toLowerCase();
+					const itemEl = document.createElement('li');
+					itemEl.className = `pdf-toc-item pdf-toc-item-${tag}`;
+
+					const linkEl = document.createElement('a');
+					linkEl.className = 'pdf-toc-link';
+					linkEl.href = `#${headingId}`;
+					linkEl.textContent = heading.textContent ? heading.textContent.trim() : '';
+
+					itemEl.appendChild(linkEl);
+					listEl.appendChild(itemEl);
+				});
+
+				tocContainer.appendChild(listEl);
+
+				// 插入到预览容器的最上方
+				const previewEl = container.querySelector('.markdown-preview-view') || container;
+				previewEl.prepend(tocContainer);
+			}
+
+			// 2. 调用 Obsidian 原生 PDF 导出命令
+			(this.app as ObsidianApp).commands.executeCommandById('workspace:export-pdf');
+
+			// 3. 导出触发后清理临时目录 DOM
+			setTimeout(() => {
+				if (tocContainer && tocContainer.parentNode) {
+					tocContainer.parentNode.removeChild(tocContainer);
+				}
+			}, 2000);
 		} catch (error) {
 			const err = error as Error;
 			console.error(err);

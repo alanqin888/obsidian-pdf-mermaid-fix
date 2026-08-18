@@ -152,13 +152,85 @@ def set_paragraph_spacing(paragraph, before=0, after=8, line=1.35):
     fmt.line_spacing = line
 
 
-def add_heading(doc: Document, text: str, level: int):
+def add_bookmark(paragraph, name: str, bookmark_id: int):
+    tag_start = OxmlElement('w:bookmarkStart')
+    tag_start.set(qn('w:id'), str(bookmark_id))
+    tag_start.set(qn('w:name'), name)
+    tag_end = OxmlElement('w:bookmarkEnd')
+    tag_end.set(qn('w:id'), str(bookmark_id))
+    paragraph._p.append(tag_start)
+    paragraph._p.append(tag_end)
+
+
+def add_hyperlink_to_bookmark(paragraph, text: str, bookmark_name: str, level: int = 1):
+    indent_cm = 0.2 if level == 1 else (0.6 if level == 2 else 1.0)
+    paragraph.paragraph_format.left_indent = Cm(indent_cm)
+    set_paragraph_spacing(paragraph, after=4, line=1.25)
+    
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('w:anchor'), bookmark_name)
+    hyperlink.set(qn('w:history'), '1')
+    
+    new_run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    
+    # 字体与颜色
+    rFonts = OxmlElement('w:rFonts')
+    rFonts.set(qn('w:ascii'), WEST_FONT)
+    rFonts.set(qn('w:eastAsia'), BODY_FONT)
+    rPr.append(rFonts)
+    
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), '0284C7')
+    rPr.append(color)
+    
+    sz = OxmlElement('w:sz')
+    sz.set(qn('w:val'), '21' if level == 1 else '20')
+    rPr.append(sz)
+    
+    if level == 1:
+        b = OxmlElement('w:b')
+        rPr.append(b)
+        
+    new_run.append(rPr)
+    
+    text_node = OxmlElement('w:t')
+    text_node.text = text
+    new_run.append(text_node)
+    
+    hyperlink.append(new_run)
+    paragraph._p.append(hyperlink)
+
+
+def add_native_toc_field(paragraph):
+    set_paragraph_spacing(paragraph, before=6, after=12)
+    run = paragraph.add_run()
+    fldChar1 = OxmlElement('w:fldChar')
+    fldChar1.set(qn('w:fldCharType'), 'begin')
+    instrText = OxmlElement('w:instrText')
+    instrText.set(qn('xml:space'), 'preserve')
+    instrText.text = 'TOC \\o "1-3" \\h \\z \\u'
+    fldChar2 = OxmlElement('w:fldChar')
+    fldChar2.set(qn('w:fldCharType'), 'separate')
+    fldChar3 = OxmlElement('w:fldChar')
+    fldChar3.set(qn('w:fldCharType'), 'end')
+    r = run._r
+    r.append(fldChar1)
+    r.append(instrText)
+    r.append(fldChar2)
+    r.append(fldChar3)
+
+
+def add_heading(doc: Document, text: str, level: int, bookmark_name: str | None = None, bookmark_id: int = 0):
     if level == 1:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_paragraph_spacing(paragraph, before=0, after=16, line=1.15)
         run = paragraph.add_run(clean_inline(text))
         set_run_font(run, size=22, bold=True, color=PRIMARY)
+
+        if bookmark_name:
+            add_bookmark(paragraph, bookmark_name, bookmark_id)
 
         line = doc.add_paragraph()
         line.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -171,6 +243,9 @@ def add_heading(doc: Document, text: str, level: int):
     set_paragraph_spacing(paragraph, before=14 if level == 2 else 8, after=8, line=1.2)
     for run in paragraph.runs:
         set_run_font(run, size=14 if level == 2 else 12, bold=True, color=PRIMARY)
+
+    if bookmark_name:
+        add_bookmark(paragraph, bookmark_name, bookmark_id)
 
 
 def add_body_paragraph(doc: Document, text: str):
@@ -349,7 +424,56 @@ def convert(md_path: Path, output_path: Path):
     add_footer(doc)
 
     lines = md_path.read_text(encoding="utf-8").splitlines()
+
+    # 预扫描所有标题，建立索引字典
+    collected_headings = []
+    heading_counter = 0
+    heading_map = {}
+    for idx, raw in enumerate(lines):
+        l = raw.strip()
+        m1 = re.match(r"^(#{1,6})\s+(.+)$", l)
+        m2 = re.match(r"^<h([1-6])>(.+?)</h\1>$", l)
+        if m1:
+            level = len(m1.group(1))
+            text = clean_inline(m1.group(2))
+            heading_counter += 1
+            bname = f"_TocHeading_{heading_counter}"
+            collected_headings.append((text, level, bname, heading_counter, idx))
+            heading_map[idx] = (bname, heading_counter)
+        elif m2:
+            level = int(m2.group(1))
+            text = clean_inline(m2.group(2))
+            heading_counter += 1
+            bname = f"_TocHeading_{heading_counter}"
+            collected_headings.append((text, level, bname, heading_counter, idx))
+            heading_map[idx] = (bname, heading_counter)
+
     index = 0
+    toc_inserted = False
+
+    # 闭包：插入超链接目录
+    def insert_toc():
+        nonlocal toc_inserted
+        if toc_inserted or not collected_headings:
+            return
+        toc_inserted = True
+
+        toc_heading = doc.add_paragraph()
+        set_paragraph_spacing(toc_heading, before=10, after=10)
+        toc_run = toc_heading.add_run("目录 / Table of Contents")
+        set_run_font(toc_run, size=14, bold=True, color=PRIMARY)
+
+        for h_text, h_level, h_bname, _, _ in collected_headings:
+            if h_level <= 3:
+                p = doc.add_paragraph()
+                add_hyperlink_to_bookmark(p, h_text, h_bname, level=h_level)
+
+        p_native = doc.add_paragraph()
+        add_native_toc_field(p_native)
+
+        sep_p = doc.add_paragraph()
+        set_paragraph_spacing(sep_p, after=14)
+
     while index < len(lines):
         raw = lines[index]
         line = raw.strip()
@@ -362,39 +486,63 @@ def convert(md_path: Path, output_path: Path):
             continue
 
         if line.startswith("|") and line.endswith("|"):
+            if not toc_inserted:
+                insert_toc()
             rows, index = parse_table(lines, index)
             add_table(doc, rows)
             continue
 
         heading = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading:
-            add_heading(doc, heading.group(2), len(heading.group(1)))
+            level = len(heading.group(1))
+            text = heading.group(2)
+            binfo = heading_map.get(index)
+            bname, bid = binfo if binfo else (None, 0)
+            
+            add_heading(doc, text, level, bookmark_name=bname, bookmark_id=bid)
+            
+            # 如果是一级大标题 (H1)，目录插在 H1 之后；如果是 H2/H3，且目录尚未插入，直接插在最前方
+            if level == 1 and not toc_inserted:
+                insert_toc()
+            elif level > 1 and not toc_inserted:
+                insert_toc()
+                
             index += 1
             continue
 
         if line.startswith("!["):
+            if not toc_inserted:
+                insert_toc()
             add_image(doc, md_path, line)
             index += 1
             continue
 
         bullet = re.match(r"^[-*]\s+(.+)$", line)
         if bullet:
+            if not toc_inserted:
+                insert_toc()
             add_bullet(doc, bullet.group(1))
             index += 1
             continue
 
         numbered = re.match(r"^(\d+)\.\s+(.+)$", line)
         if numbered:
+            if not toc_inserted:
+                insert_toc()
             add_numbered(doc, numbered.group(1), numbered.group(2))
             index += 1
             continue
 
         if line.startswith("> "):
+            if not toc_inserted:
+                insert_toc()
             add_quote(doc, line[2:])
             index += 1
             continue
 
         if line.startswith("```"):
+            if not toc_inserted:
+                insert_toc()
             if line.startswith("```mermaid"):
                 mermaid_lines = []
                 index += 1
@@ -418,7 +566,14 @@ def convert(md_path: Path, output_path: Path):
 
         html_heading = re.match(r"^<h([1-6])>(.+?)</h\1>$", line)
         if html_heading:
-            add_heading(doc, html_heading.group(2), int(html_heading.group(1)))
+            level = int(html_heading.group(1))
+            text = html_heading.group(2)
+            binfo = heading_map.get(index)
+            bname, bid = binfo if binfo else (None, 0)
+            
+            add_heading(doc, text, level, bookmark_name=bname, bookmark_id=bid)
+            if not toc_inserted:
+                insert_toc()
             index += 1
             continue
 
@@ -431,6 +586,9 @@ def convert(md_path: Path, output_path: Path):
         if line.startswith("<!--") and line.endswith("-->"):
             index += 1
             continue
+
+        if not toc_inserted:
+            insert_toc()
 
         add_body_paragraph(doc, line)
         index += 1
