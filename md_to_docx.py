@@ -448,9 +448,94 @@ def sanitize_mermaid_code(code: str) -> str:
 
 import json
 
+def parse_mermaid_steps(code: str) -> list[dict[str, str | list[str]]]:
+    steps = []
+    # 匹配 subgraph StepX["标题"]
+    subgraph_blocks = re.findall(r"subgraph\s+\w+\[\"([^\"]+)\"\]([\s\S]*?)end", code)
+    if subgraph_blocks:
+        for sg_title, sg_body in subgraph_blocks:
+            nodes = re.findall(r"\w+\[\"([^\"]+)\"\]", sg_body)
+            if nodes:
+                steps.append({"title": clean_inline(sg_title), "nodes": nodes})
+    else:
+        # 如果没有 subgraph，查找顶级节点
+        nodes = re.findall(r"\w+\[\"([^\"]+)\"\]", code)
+        if len(nodes) >= 2:
+            steps.append({"title": "流程图步骤节点明细", "nodes": nodes})
+    return steps
+
+
+def add_editable_process_cards(doc: Document, steps: list[dict[str, str | list[str]]]):
+    if not steps:
+        return
+
+    caption_p = doc.add_paragraph()
+    caption_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    set_paragraph_spacing(caption_p, before=14, after=8)
+    caption_run = caption_p.add_run("📝 【可编辑流程卡片与步骤明细（可在 Word 内直接修改文本/排版）】")
+    set_run_font(caption_run, size=11, bold=True, color=PRIMARY)
+
+    for idx, step in enumerate(steps):
+        title = step["title"]
+        nodes = step["nodes"]
+
+        # 创建单列步骤卡片表格
+        table = doc.add_table(rows=2, cols=1)
+        table.autofit = True
+        set_table_borders(table)
+
+        # 1. 标题行
+        header_cell = table.rows[0].cells[0]
+        clear_cell(header_cell)
+        hp = header_cell.paragraphs[0]
+        hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        hrun = hp.add_run(f"📌 {title}")
+        set_run_font(hrun, size=11, bold=True, color="FFFFFF")
+        header_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        set_cell_margins(header_cell, top=140, start=180, bottom=140, end=180)
+        set_cell_shading(header_cell, TABLE_HEADER_BG)
+
+        # 2. 内容行
+        body_cell = table.rows[1].cells[0]
+        clear_cell(body_cell)
+        set_cell_margins(body_cell, top=140, start=180, bottom=140, end=180)
+        set_cell_shading(body_cell, "F8FAFC")
+
+        for n_idx, node_raw in enumerate(nodes):
+            bp = body_cell.paragraphs[0] if n_idx == 0 else body_cell.add_paragraph()
+            set_paragraph_spacing(bp, before=4 if n_idx > 0 else 0, after=4, line=1.35)
+
+            # 解析节点文本，处理 <br> 换行
+            lines = [l.strip() for l in node_raw.split("<br>") if l.strip()]
+            for l_idx, line in enumerate(lines):
+                if l_idx > 0:
+                    bp = body_cell.add_paragraph()
+                    set_paragraph_spacing(bp, before=2, after=4, line=1.35)
+
+                if line.startswith("•") or line.startswith("-") or line.startswith("*"):
+                    bullet_text = line.lstrip("•-* ").strip()
+                    prefix = bp.add_run("  • ")
+                    set_run_font(prefix, size=10, bold=True, color=ACCENT)
+                    add_formatted_text(bp, bullet_text, default_size=10, default_color="1F2937")
+                else:
+                    add_formatted_text(bp, line, default_size=10.5, default_color="1F2937")
+
+        # 卡片后间距
+        p_space = doc.add_paragraph()
+        set_paragraph_spacing(p_space, after=4)
+
+        # 如果不是最后一个步骤，插入流程向下指示箭头
+        if idx < len(steps) - 1:
+            arrow_p = doc.add_paragraph()
+            arrow_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            set_paragraph_spacing(arrow_p, before=2, after=6)
+            arrow_run = arrow_p.add_run("↓ 业务流转进入下一步")
+            set_run_font(arrow_run, size=9.5, bold=True, color=ACCENT)
+
+
 def add_mermaid_image(doc: Document, mermaid_code: str):
     png_data = None
-    # 1. 优先使用官方推荐的 mermaid.ink JSON Base64 接口（支持所有复杂的中文时序图与流程图）
+    # 1. 优先使用官方推荐的 mermaid.ink JSON Base64 接口
     try:
         graph_dict = {"code": mermaid_code.strip(), "mermaid": {"theme": "default"}}
         json_str = json.dumps(graph_dict)
@@ -475,6 +560,7 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         except Exception as e:
             print(f"kroki render failed: {e}")
 
+    # 绘制渲染得到的 PNG 图片
     if png_data:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -484,6 +570,11 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         run.add_picture(image_stream, width=Cm(15.8))
     else:
         add_quote(doc, f"[Mermaid 流程图代码]:\n{mermaid_code}")
+
+    # 3. 提取 Mermaid 流程步骤，双重生成 Word 原生可编辑步骤卡片（保留图片 + 可编辑表格双选模式）
+    steps = parse_mermaid_steps(mermaid_code)
+    if steps:
+        add_editable_process_cards(doc, steps)
 
 
 def add_code_block(doc: Document, code_text: str):
