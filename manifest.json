@@ -1,9 +1,9 @@
 {
 	"id": "pdf-mermaid-fix",
 	"name": "MD Export Pro",
-	"version": "1.4.0",
+	"version": "1.4.1",
 	"minAppVersion": "1.4.0",
-	"description": "Fixes Mermaid diagram truncation in PDF export, with Word export, Callout formatting, automatic TOC, SVG vector-to-shape conversion, and borderless flow cards.",
+	"description": "Fixes Mermaid diagram truncation in PDF export, with Word export, Callout formatting, automatic TOC, and clean high-res image rendering.",
 	"author": "Alan",
 	"authorUrl": "",
 	"isDesktopOnly": true

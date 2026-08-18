@@ -448,81 +448,11 @@ def sanitize_mermaid_code(code: str) -> str:
 
 import json
 
-def parse_mermaid_steps(code: str) -> list[dict[str, str | list[str]]]:
-    steps = []
-    # 匹配 subgraph StepX["标题"]
-    subgraph_blocks = re.findall(r"subgraph\s+\w+\[\"([^\"]+)\"\]([\s\S]*?)end", code)
-    if subgraph_blocks:
-        for sg_title, sg_body in subgraph_blocks:
-            nodes = re.findall(r"\w+\[\"([^\"]+)\"\]", sg_body)
-            if nodes:
-                steps.append({"title": clean_inline(sg_title), "nodes": nodes})
-    else:
-        # 如果没有 subgraph，查找顶级节点
-        nodes = re.findall(r"\w+\[\"([^\"]+)\"\]", code)
-        if len(nodes) >= 2:
-            steps.append({"title": "流程图步骤节点明细", "nodes": nodes})
-    return steps
-
-
-def add_editable_process_cards(doc: Document, steps: list[dict[str, str | list[str]]]):
-    if not steps:
-        return
-
-    caption_p = doc.add_paragraph()
-    caption_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    set_paragraph_spacing(caption_p, before=16, after=8)
-    caption_run = caption_p.add_run("📝 【流程步骤明细与可编辑卡片（右键上方流程图可直接选择‘转换为形状’编辑）】")
-    set_run_font(caption_run, size=10.5, bold=True, color=PRIMARY)
-
-    for idx, step in enumerate(steps):
-        title = step["title"]
-        nodes = step["nodes"]
-
-        # 无边框卡片段落
-        p = doc.add_paragraph()
-        p.paragraph_format.left_indent = Cm(0.6)
-        set_paragraph_spacing(p, before=6, after=2, line=1.35)
-        set_paragraph_callout_style(p, fill_color="F8FAFC", border_color=PRIMARY if idx % 2 == 0 else ACCENT)
-
-        # 序号胶囊徽章
-        badge_run = p.add_run(f" 步骤 {idx + 1:02d} ")
-        set_run_font(badge_run, size=9, bold=True, color="FFFFFF")
-        
-        # 步骤标题
-        title_run = p.add_run(f"  {title}")
-        set_run_font(title_run, size=11, bold=True, color=PRIMARY)
-
-        # 节点详细内容
-        for node_raw in nodes:
-            lines = [l.strip() for l in node_raw.split("<br>") if l.strip()]
-            for line in lines:
-                np = doc.add_paragraph()
-                np.paragraph_format.left_indent = Cm(1.0)
-                set_paragraph_spacing(np, before=2, after=4, line=1.35)
-                set_paragraph_callout_style(np, fill_color="F8FAFC", border_color="E2E8F0")
-
-                if line.startswith("•") or line.startswith("-") or line.startswith("*"):
-                    bullet_text = line.lstrip("•-* ").strip()
-                    prefix = np.add_run("• ")
-                    set_run_font(prefix, size=10, bold=True, color=ACCENT)
-                    add_formatted_text(np, bullet_text, default_size=10, default_color="1F2937")
-                else:
-                    add_formatted_text(np, line, default_size=10.5, default_color="1F2937")
-
-        if idx < len(steps) - 1:
-            arrow_p = doc.add_paragraph()
-            arrow_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            set_paragraph_spacing(arrow_p, before=4, after=4)
-            arrow_run = arrow_p.add_run("↓ 业务流转")
-            set_run_font(arrow_run, size=9, bold=True, color=ACCENT)
-
-
 def add_mermaid_image(doc: Document, mermaid_code: str):
     png_data = None
     svg_data = None
 
-    # 1. 抓取 SVG 矢量数据与 PNG 降级数据
+    # 1. 抓取 SVG 矢量数据与 PNG 高清数据
     try:
         graph_dict = {"code": mermaid_code.strip(), "mermaid": {"theme": "default"}}
         base64_str = base64.b64encode(json.dumps(graph_dict).encode("utf-8")).decode("utf-8")
@@ -553,7 +483,7 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         except Exception as e:
             print(f"kroki fetch failed: {e}")
 
-    # 绘制图形：插入包含 SVG 矢量的图片节点（支持 Word 右键“转换为形状”）
+    # 绘制高清晰度流程图节点
     if png_data:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -562,7 +492,7 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         image_stream = io.BytesIO(png_data)
         run.add_picture(image_stream, width=Cm(15.8))
 
-        # 如果成功获取了 SVG，将矢量 SVGBlip 附加进 OpenXML
+        # 附加矢量 SVG 结构
         if svg_data:
             try:
                 from docx.opc.constants import RELATIONSHIP_TYPE
@@ -582,11 +512,6 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
                 print(f"Failed to attach SVG blip: {svg_err}")
     else:
         add_quote(doc, f"[Mermaid 流程图代码]:\n{mermaid_code}")
-
-    # 提取 Mermaid 流程步骤，生成极简无边框明细
-    steps = parse_mermaid_steps(mermaid_code)
-    if steps:
-        add_editable_process_cards(doc, steps)
 
 
 def add_code_block(doc: Document, code_text: str):
