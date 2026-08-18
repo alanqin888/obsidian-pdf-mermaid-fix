@@ -109,15 +109,108 @@ def clean_inline(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\{width=[^}]+\}", "", text)
-    # 剥离所有 HTML 标签
     text = re.sub(r"<[^>]+>", "", text)
     return text.strip()
 
 
+def parse_inline_tokens(text: str) -> list[tuple[str, bool, bool]]:
+    # 替换简单 HTML 标签
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?(p|div|span)[^>]*>", "", text, flags=re.IGNORECASE)
+    text = text.replace("<strong>", "**").replace("</strong>", "**")
+    text = re.sub(r"\{width=[^}]+\}", "", text)
+    
+    # 匹配 **bold** 与 `code`
+    pattern = r"(\*\*.+?\*\*|`[^`]+`)"
+    tokens = re.split(pattern, text)
+    result = []
+    for token in tokens:
+        if not token:
+            continue
+        if token.startswith("**") and token.endswith("**") and len(token) >= 4:
+            result.append((token[2:-2], True, False))
+        elif token.startswith("`") and token.endswith("`") and len(token) >= 2:
+            result.append((token[1:-1], False, True))
+        else:
+            result.append((token, False, False))
+    return result
+
+
+def add_formatted_text(paragraph, text: str, default_size=10.5, default_color="1F2937", force_bold=False):
+    tokens = parse_inline_tokens(text)
+    for content, is_bold, is_code in tokens:
+        # 处理可能的换行
+        lines = content.split("\n")
+        for i, line_text in enumerate(lines):
+            if i > 0:
+                paragraph.add_run().add_break()
+            if not line_text:
+                continue
+            run = paragraph.add_run(line_text)
+            if is_code:
+                run.font.name = "Courier New"
+                set_run_font(run, size=default_size - 0.5, bold=force_bold, color="334155")
+            else:
+                set_run_font(run, size=default_size, bold=is_bold or force_bold, color=default_color)
+
+
 def add_paragraph_with_inline(paragraph, text: str, size=10.5, color="1F2937", bold=False):
-    text = clean_inline(text)
-    run = paragraph.add_run(text)
-    set_run_font(run, size=size, bold=bold, color=color)
+    add_formatted_text(paragraph, text, default_size=size, default_color=color, force_bold=bold)
+
+
+def set_paragraph_callout_style(paragraph, fill_color="F8FAFC", border_color="0C1A32"):
+    pPr = paragraph._p.get_or_add_pPr()
+    
+    # 背景着色
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), fill_color)
+    pPr.append(shd)
+    
+    # 左侧加粗边框
+    pBdr = OxmlElement('w:pBdr')
+    left = OxmlElement('w:left')
+    left.set(qn('w:val'), 'single')
+    left.set(qn('w:sz'), '24') # 3pt 边框宽度
+    left.set(qn('w:space'), '12')
+    left.set(qn('w:color'), border_color)
+    pBdr.append(left)
+    pPr.append(pBdr)
+
+
+def add_quote_block(doc: Document, quote_lines: list[str]):
+    if not quote_lines:
+        return
+    
+    for idx, line_text in enumerate(quote_lines):
+        paragraph = doc.add_paragraph()
+        paragraph.paragraph_format.left_indent = Cm(0.6)
+        paragraph.paragraph_format.right_indent = Cm(0.4)
+        
+        # 首尾段落控制上下边距
+        before = 8 if idx == 0 else 2
+        after = 8 if idx == len(quote_lines) - 1 else 2
+        set_paragraph_spacing(paragraph, before=before, after=after, line=1.35)
+        set_paragraph_callout_style(paragraph, fill_color="F8FAFC", border_color="0C1A32")
+        
+        # 检查是否为引用块内部的列表项 (如 > 1. xxx 或 > - xxx)
+        numbered_match = re.match(r"^(\d+)\.\s+(.+)$", line_text)
+        bullet_match = re.match(r"^[-*]\s+(.+)$", line_text)
+        
+        if numbered_match:
+            num_str = numbered_match.group(1)
+            content = numbered_match.group(2)
+            prefix_run = paragraph.add_run(f"{num_str}. ")
+            set_run_font(prefix_run, size=10.5, bold=True, color=PRIMARY)
+            add_formatted_text(paragraph, content, default_size=10.5, default_color="1F2937")
+        elif bullet_match:
+            content = bullet_match.group(1)
+            prefix_run = paragraph.add_run("• ")
+            set_run_font(prefix_run, size=10.5, bold=True, color=ACCENT)
+            add_formatted_text(paragraph, content, default_size=10.5, default_color="1F2937")
+        else:
+            add_formatted_text(paragraph, line_text, default_size=10.5, default_color="1F2937")
 
 
 def configure_styles(doc: Document):
@@ -261,8 +354,7 @@ def add_bullet(doc: Document, text: str):
     set_paragraph_spacing(paragraph, after=6, line=1.5)
     bullet = paragraph.add_run("• ")
     set_run_font(bullet, size=11, bold=False, color=ACCENT)
-    text_run = paragraph.add_run(clean_inline(text))
-    set_run_font(text_run, size=11, color="1F2937")
+    add_formatted_text(paragraph, text, default_size=11, default_color="1F2937")
 
 
 def add_numbered(doc: Document, number: str, text: str):
@@ -271,18 +363,12 @@ def add_numbered(doc: Document, number: str, text: str):
     paragraph.paragraph_format.first_line_indent = Cm(-0.4)
     set_paragraph_spacing(paragraph, after=7, line=1.52)
     prefix = paragraph.add_run(f"{number}. ")
-    set_run_font(prefix, size=11, bold=False, color=PRIMARY)
-    text_run = paragraph.add_run(clean_inline(text))
-    set_run_font(text_run, size=11, color="1F2937")
+    set_run_font(prefix, size=11, bold=True, color=PRIMARY)
+    add_formatted_text(paragraph, text, default_size=11, default_color="1F2937")
 
 
 def add_quote(doc: Document, text: str):
-    paragraph = doc.add_paragraph()
-    paragraph.paragraph_format.left_indent = Cm(0.45)
-    set_paragraph_spacing(paragraph, before=4, after=8)
-    run = paragraph.add_run(clean_inline(text))
-    set_run_font(run, size=10.5, color=PRIMARY)
-    paragraph.paragraph_format.line_spacing = 1.35
+    add_quote_block(doc, [text])
 
 
 def parse_table(lines: list[str], start: int) -> tuple[list[list[str]], int]:
@@ -536,8 +622,11 @@ def convert(md_path: Path, output_path: Path):
         if line.startswith("> "):
             if not toc_inserted:
                 insert_toc()
-            add_quote(doc, line[2:])
-            index += 1
+            quote_lines = []
+            while index < len(lines) and lines[index].strip().startswith("> "):
+                quote_lines.append(lines[index].strip()[2:].strip())
+                index += 1
+            add_quote_block(doc, quote_lines)
             continue
 
         if line.startswith("```"):
