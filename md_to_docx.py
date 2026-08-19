@@ -94,35 +94,44 @@ def clear_cell(cell):
 def clean_inline(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"~~([^~]+)~~", r"\1", text)
     text = re.sub(r"\{width=[^}]+\}", "", text)
     text = re.sub(r"<[^>]+>", "", text)
     return text.strip()
 
 
-def parse_inline_tokens(text: str) -> list[tuple[str, bool, bool]]:
+def parse_inline_tokens(text: str) -> list[tuple[str, bool, bool, bool]]:
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</?(p|div|span)[^>]*>", "", text, flags=re.IGNORECASE)
     text = text.replace("<strong>", "**").replace("</strong>", "**")
+    text = text.replace("<del>", "~~").replace("</del>", "~~")
+    text = text.replace("<s>", "~~").replace("</s>", "~~")
+    text = text.replace("<strike>", "~~").replace("</strike>", "~~")
     text = re.sub(r"\{width=[^}]+\}", "", text)
     
-    pattern = r"(\*\*.+?\*\*|`[^`]+`)"
-    tokens = re.split(pattern, text)
+    # 状态分词器：支持任意嵌套 (**加粗**, ~~删除线~~, `行内代码`)
+    tokens = re.split(r"(\*\*|~~|`[^`]+`)", text)
     result = []
-    for token in tokens:
-        if not token:
+    is_bold = False
+    is_strike = False
+    
+    for t in tokens:
+        if not t:
             continue
-        if token.startswith("**") and token.endswith("**") and len(token) >= 4:
-            result.append((token[2:-2], True, False))
-        elif token.startswith("`") and token.endswith("`") and len(token) >= 2:
-            result.append((token[1:-1], False, True))
+        if t == "**":
+            is_bold = not is_bold
+        elif t == "~~":
+            is_strike = not is_strike
+        elif t.startswith("`") and t.endswith("`") and len(t) >= 2:
+            result.append((t[1:-1], is_bold, True, is_strike))
         else:
-            result.append((token, False, False))
+            result.append((t, is_bold, False, is_strike))
     return result
 
 
 def add_formatted_text(paragraph, text: str, default_size=10.5, default_color="1F2937", force_bold=False):
     tokens = parse_inline_tokens(text)
-    for content, is_bold, is_code in tokens:
+    for content, is_bold, is_code, is_strike in tokens:
         lines = content.split("\n")
         for i, line_text in enumerate(lines):
             if i > 0:
@@ -130,11 +139,18 @@ def add_formatted_text(paragraph, text: str, default_size=10.5, default_color="1
             if not line_text:
                 continue
             run = paragraph.add_run(line_text)
+            if is_strike:
+                run.font.strike = True
+                # 删除线内容在非白色文字下使用更淡的灰色以突显删除语义
+                color = "94A3B8" if default_color != "FFFFFF" else default_color
+            else:
+                color = default_color
+
             if is_code:
                 run.font.name = "Courier New"
-                set_run_font(run, size=default_size - 0.5, bold=force_bold, color="334155")
+                set_run_font(run, size=default_size - 0.5, bold=force_bold, color="334155" if not is_strike else color)
             else:
-                set_run_font(run, size=default_size, bold=is_bold or force_bold, color=default_color)
+                set_run_font(run, size=default_size, bold=is_bold or force_bold, color=color)
 
 
 def write_cell(cell, text: str, header: bool = False, zebra: bool = False):
