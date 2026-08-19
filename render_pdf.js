@@ -70,9 +70,13 @@ async function convertMdToPdf(mdPath, outputPath) {
       
       /* 独立封面页 */
       .cover-page {
+        height: 250mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
         page-break-after: always;
         break-after: page;
-        padding-top: 60px;
+        padding-top: 50px;
         box-sizing: border-box;
       }
       .cover-title {
@@ -80,14 +84,15 @@ async function convertMdToPdf(mdPath, outputPath) {
         font-size: 24pt;
         font-weight: bold;
         color: #0C1A32;
-        margin-bottom: 50px;
+        margin-bottom: 30px;
         line-height: 1.3;
       }
       .cover-table {
         width: 100%;
         border-collapse: collapse;
         border: 1px solid #CBD5E1;
-        margin-top: 20px;
+        margin-top: auto;
+        margin-bottom: 20px;
       }
       .cover-key {
         width: 25%;
