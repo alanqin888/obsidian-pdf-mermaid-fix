@@ -1,5 +1,11 @@
 @media print {
-	/* 1. 大标题强制居中与下沉 (Centered Cover Title) */
+	/* 1. 大标题强制居中与下沉 (Centered Cover Title - 最大特异性覆盖) */
+	body.theme-light .print h1,
+	body.theme-dark .print h1,
+	body .print h1,
+	.print .markdown-rendered h1,
+	.print .markdown-preview-view h1,
+	.print .heading-wrapper h1,
 	.markdown-rendered h1,
 	.markdown-preview-view h1,
 	.markdown-rendered .heading-wrapper > h1,
@@ -16,31 +22,39 @@
 	}
 
 	/* 2. 开篇摘要/元数据卡片：下沉、质感底纹与独立封面自动分页 (Cover Metadata Card & Page Break) */
+	body.theme-light .print blockquote:first-of-type,
+	body.theme-dark .print blockquote:first-of-type,
+	body .print blockquote:first-of-type,
+	.print .markdown-rendered > blockquote:first-of-type,
+	.print .markdown-preview-view > blockquote:first-of-type,
 	.markdown-rendered > blockquote:first-of-type,
 	.markdown-preview-view > blockquote:first-of-type,
 	.markdown-rendered .heading-wrapper + blockquote,
 	blockquote:first-of-type {
 		margin: 40px auto 30px auto !important;
-		padding: 16px 20px !important;
+		padding: 18px 22px !important;
 		background-color: #f8fafc !important;
 		border: 1px solid #cbd5e1 !important;
-		border-left: 4px solid #0c1a32 !important;
-		border-radius: 4px !important;
+		border-left: 5px solid #0c1a32 !important;
+		border-radius: 6px !important;
 		box-shadow: none !important;
 		color: #1e293b !important;
-		font-size: 10pt !important;
+		font-size: 10.5pt !important;
 		line-height: 1.6 !important;
 		break-after: page !important;
 		page-break-after: always !important;
 	}
 
 	/* 3. 隐藏封面后的分割线 (避免第2页页顶出现孤立横线) */
+	.print .markdown-rendered hr:first-of-type,
 	.markdown-rendered hr:first-of-type,
-	.markdown-preview-view hr:first-of-type {
+	.markdown-preview-view hr:first-of-type,
+	hr:first-of-type {
 		display: none !important;
 	}
 
 	/* 4. 二级标题与三级标题规范 */
+	body .print h2,
 	.markdown-rendered h2,
 	.markdown-preview-view h2,
 	h2 {
@@ -53,6 +67,7 @@
 		page-break-after: avoid !important;
 	}
 
+	body .print h3,
 	.markdown-rendered h3,
 	.markdown-preview-view h3,
 	h3 {
