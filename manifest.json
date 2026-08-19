@@ -1,9 +1,9 @@
 {
 	"id": "pdf-mermaid-fix",
 	"name": "MD Export Pro",
-	"version": "1.8.0",
+	"version": "1.8.1",
 	"minAppVersion": "1.4.0",
-	"description": "Fixes Mermaid diagram truncation in PDF export, with unified centered titles, Executive Word Cover Page & Metadata tables, and clean typography.",
+	"description": "Fixes Mermaid diagram truncation in PDF export, with unified centered titles, Executive Word/PDF Cover Page & Metadata tables, and clean typography.",
 	"author": "Alan",
 	"authorUrl": "",
 	"isDesktopOnly": true

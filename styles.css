@@ -1,17 +1,71 @@
 @media print {
-	/* 大标题居中与封面质感 (Centered Main Title) */
-	h1:first-of-type,
-	.markdown-rendered h1:first-of-type,
-	.markdown-preview-view h1:first-of-type {
+	/* 1. 大标题强制居中与下沉 (Centered Cover Title) */
+	.markdown-rendered h1,
+	.markdown-preview-view h1,
+	.markdown-rendered .heading-wrapper > h1,
+	.mod-header h1,
+	h1 {
 		text-align: center !important;
-		margin-top: 40px !important;
-		margin-bottom: 25px !important;
+		margin-top: 50px !important;
+		margin-bottom: 30px !important;
 		font-size: 24pt !important;
 		color: #0c1a32 !important;
 		font-weight: bold !important;
+		display: block !important;
+		width: 100% !important;
 	}
 
-	/* 防止标题及其包裹层孤立在页尾 (Avoid orphan headings) */
+	/* 2. 开篇摘要/元数据卡片：下沉、质感底纹与独立封面自动分页 (Cover Metadata Card & Page Break) */
+	.markdown-rendered > blockquote:first-of-type,
+	.markdown-preview-view > blockquote:first-of-type,
+	.markdown-rendered .heading-wrapper + blockquote,
+	blockquote:first-of-type {
+		margin: 40px auto 30px auto !important;
+		padding: 16px 20px !important;
+		background-color: #f8fafc !important;
+		border: 1px solid #cbd5e1 !important;
+		border-left: 4px solid #0c1a32 !important;
+		border-radius: 4px !important;
+		box-shadow: none !important;
+		color: #1e293b !important;
+		font-size: 10pt !important;
+		line-height: 1.6 !important;
+		break-after: page !important;
+		page-break-after: always !important;
+	}
+
+	/* 3. 隐藏封面后的分割线 (避免第2页页顶出现孤立横线) */
+	.markdown-rendered hr:first-of-type,
+	.markdown-preview-view hr:first-of-type {
+		display: none !important;
+	}
+
+	/* 4. 二级标题与三级标题规范 */
+	.markdown-rendered h2,
+	.markdown-preview-view h2,
+	h2 {
+		color: #0c1a32 !important;
+		font-size: 15pt !important;
+		margin-top: 24px !important;
+		margin-bottom: 8px !important;
+		font-weight: bold !important;
+		break-after: avoid !important;
+		page-break-after: avoid !important;
+	}
+
+	.markdown-rendered h3,
+	.markdown-preview-view h3,
+	h3 {
+		color: #1e293b !important;
+		font-size: 12.5pt !important;
+		margin-top: 16px !important;
+		margin-bottom: 6px !important;
+		font-weight: bold !important;
+		break-after: avoid !important;
+		page-break-after: avoid !important;
+	}
+
+	/* 5. 防止标题孤行 */
 	h1, h2, h3, h4, h5, h6,
 	.heading-wrapper,
 	.markdown-rendered h1,
@@ -23,7 +77,7 @@
 		page-break-after: avoid !important;
 	}
 
-	/* Mermaid 容器样式优化 */
+	/* 6. Mermaid 容器与单页高度约束 (Max Height ≤ 18cm) */
 	.mermaid, .block-language-mermaid, div[data-type="mermaid"] {
 		break-inside: avoid !important;
 		page-break-inside: avoid !important;
@@ -33,7 +87,6 @@
 		margin: 0.8em auto !important;
 	}
 
-	/* 限制 SVG 宽高：最大高度设为 18cm，确保标题 + 流程图能完美在一页 A4 内放下 */
 	.mermaid svg, .block-language-mermaid svg, div[data-type="mermaid"] svg {
 		max-width: 100% !important;
 		max-height: 18cm !important;
@@ -44,7 +97,7 @@
 		margin: 0 auto !important;
 	}
 
-	/* 防止表格与代码块断裂 */
+	/* 7. 表格与代码块防截断 */
 	table, pre {
 		break-inside: avoid !important;
 		page-break-inside: avoid !important;
