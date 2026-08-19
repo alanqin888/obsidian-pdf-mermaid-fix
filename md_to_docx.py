@@ -412,8 +412,41 @@ def add_numbered(doc: Document, number: str, text: str):
     add_formatted_text(paragraph, text, default_size=11, default_color="1F2937")
 
 
-def add_quote(doc: Document, text: str):
-    add_quote_block(doc, [text])
+def get_image_size(image_bytes: bytes) -> tuple[int, int]:
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        return img.size
+    except Exception:
+        pass
+
+    # 纯 Python 解析 PNG 头部 IHDR (offset 16..24)
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") and len(image_bytes) >= 24:
+        w = int.from_bytes(image_bytes[16:20], "big")
+        h = int.from_bytes(image_bytes[20:24], "big")
+        return w, h
+
+    return 800, 600
+
+
+def add_scaled_picture(run, image_bytes: bytes, max_width_cm: float = 15.8, max_height_cm: float = 18.0):
+    w, h = get_image_size(image_bytes)
+    if w <= 0 or h <= 0:
+        w, h = 800, 600
+
+    aspect_ratio = h / w
+
+    # 默认按标准页宽 (15.8cm) 计算高度
+    target_width_cm = max_width_cm
+    target_height_cm = target_width_cm * aspect_ratio
+
+    # 如果高度超过 A4 单页最大容纳高度 (18.0cm)，以最大高度按比例约束宽度
+    if target_height_cm > max_height_cm:
+        target_height_cm = max_height_cm
+        target_width_cm = target_height_cm / aspect_ratio
+
+    image_stream = io.BytesIO(image_bytes)
+    run.add_picture(image_stream, width=Cm(target_width_cm), height=Cm(target_height_cm))
 
 
 def parse_table(lines: list[str], start: int) -> tuple[list[list[str]], int]:
@@ -439,12 +472,16 @@ def add_table(doc: Document, rows: list[list[str]]):
     table = doc.add_table(rows=len(rows), cols=width)
     table.autofit = True
     set_table_borders(table)
+    
     for row_index, row in enumerate(rows):
+        is_header = (row_index == 0)
+        is_zebra = (row_index % 2 == 1 and not is_header)
         for col_index in range(width):
             text = row[col_index] if col_index < len(row) else ""
-            write_cell(table.rows[row_index].cells[col_index], text, header=row_index == 0)
+            write_cell(table.rows[row_index].cells[col_index], text, header=is_header, zebra=is_zebra)
+            
     paragraph = doc.add_paragraph()
-    set_paragraph_spacing(paragraph, after=8)
+    set_paragraph_spacing(paragraph, after=10)
 
 
 def add_image(doc: Document, md_path: Path, line: str):
@@ -461,7 +498,11 @@ def add_image(doc: Document, md_path: Path, line: str):
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     set_paragraph_spacing(paragraph, before=8, after=4)
     run = paragraph.add_run()
-    run.add_picture(str(image_path), width=Cm(15.8))
+    
+    with open(image_path, "rb") as f:
+        img_bytes = f.read()
+    add_scaled_picture(run, img_bytes, max_width_cm=15.8, max_height_cm=18.0)
+    
     if alt:
         caption = doc.add_paragraph()
         caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -528,14 +569,13 @@ def add_mermaid_image(doc: Document, mermaid_code: str):
         except Exception as e:
             print(f"kroki fetch failed: {e}")
 
-    # 绘制高清晰度流程图节点
+    # 绘制高清晰度流程图节点 (高度限制在 18.0cm 以内，绝对不会超过单页被截断)
     if png_data:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_paragraph_spacing(paragraph, before=10, after=10)
         run = paragraph.add_run()
-        image_stream = io.BytesIO(png_data)
-        run.add_picture(image_stream, width=Cm(15.8))
+        add_scaled_picture(run, png_data, max_width_cm=15.8, max_height_cm=18.0)
 
         # 附加矢量 SVG 结构
         if svg_data:
