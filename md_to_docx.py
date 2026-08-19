@@ -314,28 +314,73 @@ def add_native_toc_field(paragraph):
     r.append(fldChar3)
 
 
+def write_cell(cell, text: str, header: bool = False, zebra: bool = False):
+    clear_cell(cell)
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
+    # 允许单元格中解析行内粗体与 <br> 换行
+    add_formatted_text(paragraph, text, default_size=9.5, default_color="FFFFFF" if header else "1F2937", force_bold=header)
+    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    set_cell_margins(cell, top=130, start=150, bottom=130, end=150)
+    
+    if header:
+        set_cell_shading(cell, TABLE_HEADER_BG)
+    elif zebra:
+        set_cell_shading(cell, "F8FAFC")
+    else:
+        set_cell_shading(cell, "FFFFFF")
+
+
+def add_table(doc: Document, rows: list[list[str]]):
+    if not rows:
+        return
+    width = max(len(row) for row in rows)
+    table = doc.add_table(rows=len(rows), cols=width)
+    table.autofit = True
+    set_table_borders(table)
+    
+    for row_index, row in enumerate(rows):
+        is_header = (row_index == 0)
+        is_zebra = (row_index % 2 == 1 and not is_header)
+        for col_index in range(width):
+            text = row[col_index] if col_index < len(row) else ""
+            write_cell(table.rows[row_index].cells[col_index], text, header=is_header, zebra=is_zebra)
+            
+    paragraph = doc.add_paragraph()
+    set_paragraph_spacing(paragraph, after=10)
+
+
 def add_heading(doc: Document, text: str, level: int, bookmark_name: str | None = None, bookmark_id: int = 0):
+    clean_title = clean_inline(text)
+    
     if level == 1:
+        # 大标题 (H1)
         paragraph = doc.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        set_paragraph_spacing(paragraph, before=0, after=16, line=1.15)
-        run = paragraph.add_run(clean_inline(text))
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        set_paragraph_spacing(paragraph, before=6, after=14, line=1.15)
+        run = paragraph.add_run(clean_title)
         set_run_font(run, size=22, bold=True, color=PRIMARY)
 
         if bookmark_name:
             add_bookmark(paragraph, bookmark_name, bookmark_id)
-
-        line = doc.add_paragraph()
-        line.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        set_paragraph_spacing(line, before=0, after=14, line=1)
-        run = line.add_run("━" * 18)
-        set_run_font(run, size=8, color=ACCENT)
         return
 
-    paragraph = doc.add_heading(clean_inline(text), level=min(level, 3))
-    set_paragraph_spacing(paragraph, before=14 if level == 2 else 8, after=8, line=1.2)
-    for run in paragraph.runs:
-        set_run_font(run, size=14 if level == 2 else 12, bold=True, color=PRIMARY)
+    # 二级与三级标题
+    paragraph = doc.add_heading(clean_title, level=min(level, 3))
+    
+    if level == 2:
+        # 二级标题 (H2)：加上边框装饰与背景衬底
+        set_paragraph_spacing(paragraph, before=18, after=8, line=1.25)
+        set_paragraph_callout_style(paragraph, fill_color="F1F5F9", border_color=PRIMARY)
+        paragraph.paragraph_format.left_indent = Cm(0.2)
+        for run in paragraph.runs:
+            set_run_font(run, size=14.5, bold=True, color=PRIMARY)
+    else:
+        # 三级标题 (H3)
+        set_paragraph_spacing(paragraph, before=12, after=6, line=1.2)
+        for run in paragraph.runs:
+            set_run_font(run, size=12, bold=True, color=ACCENT)
 
     if bookmark_name:
         add_bookmark(paragraph, bookmark_name, bookmark_id)
