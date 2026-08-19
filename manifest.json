@@ -1,9 +1,9 @@
 {
 	"id": "pdf-mermaid-fix",
 	"name": "MD Export Pro",
-	"version": "1.5.1",
+	"version": "1.6.0",
 	"minAppVersion": "1.4.0",
-	"description": "Fixes Mermaid diagram truncation in PDF export, with Executive Word document typography, automatic image height capping (max A4 single page), zebra-striped tables, and automatic TOC.",
+	"description": "Fixes Mermaid diagram truncation in PDF export, with Academic/Executive Word formatting, centered title, metadata tables, and auto-scaled diagrams.",
 	"author": "Alan",
 	"authorUrl": "",
 	"isDesktopOnly": true

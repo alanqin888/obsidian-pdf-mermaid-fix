@@ -91,20 +91,6 @@ def clear_cell(cell):
         paragraph.clear()
 
 
-def write_cell(cell, text: str, header: bool = False):
-    clear_cell(cell)
-    paragraph = cell.paragraphs[0]
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = paragraph.add_run(clean_inline(text))
-    set_run_font(run, size=9.5, bold=header, color="FFFFFF" if header else "1F2937")
-    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-    set_cell_margins(cell)
-    if header:
-        set_cell_shading(cell, TABLE_HEADER_BG)
-    else:
-        set_cell_shading(cell, "FFFFFF")
-
-
 def clean_inline(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
@@ -114,13 +100,11 @@ def clean_inline(text: str) -> str:
 
 
 def parse_inline_tokens(text: str) -> list[tuple[str, bool, bool]]:
-    # 替换简单 HTML 标签
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</?(p|div|span)[^>]*>", "", text, flags=re.IGNORECASE)
     text = text.replace("<strong>", "**").replace("</strong>", "**")
     text = re.sub(r"\{width=[^}]+\}", "", text)
     
-    # 匹配 **bold** 与 `code`
     pattern = r"(\*\*.+?\*\*|`[^`]+`)"
     tokens = re.split(pattern, text)
     result = []
@@ -139,7 +123,6 @@ def parse_inline_tokens(text: str) -> list[tuple[str, bool, bool]]:
 def add_formatted_text(paragraph, text: str, default_size=10.5, default_color="1F2937", force_bold=False):
     tokens = parse_inline_tokens(text)
     for content, is_bold, is_code in tokens:
-        # 处理可能的换行
         lines = content.split("\n")
         for i, line_text in enumerate(lines):
             if i > 0:
@@ -152,6 +135,23 @@ def add_formatted_text(paragraph, text: str, default_size=10.5, default_color="1
                 set_run_font(run, size=default_size - 0.5, bold=force_bold, color="334155")
             else:
                 set_run_font(run, size=default_size, bold=is_bold or force_bold, color=default_color)
+
+
+def write_cell(cell, text: str, header: bool = False, zebra: bool = False):
+    clear_cell(cell)
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    
+    add_formatted_text(paragraph, text, default_size=9.5, default_color="FFFFFF" if header else "1F2937", force_bold=header)
+    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    set_cell_margins(cell, top=120, start=140, bottom=120, end=140)
+    
+    if header:
+        set_cell_shading(cell, TABLE_HEADER_BG)
+    elif zebra:
+        set_cell_shading(cell, "F8FAFC")
+    else:
+        set_cell_shading(cell, "FFFFFF")
 
 
 def add_paragraph_with_inline(paragraph, text: str, size=10.5, color="1F2937", bold=False):
@@ -183,34 +183,74 @@ def add_quote_block(doc: Document, quote_lines: list[str]):
     if not quote_lines:
         return
     
-    for idx, line_text in enumerate(quote_lines):
-        paragraph = doc.add_paragraph()
-        paragraph.paragraph_format.left_indent = Cm(0.6)
-        paragraph.paragraph_format.right_indent = Cm(0.4)
-        
-        # 首尾段落控制上下边距
-        before = 8 if idx == 0 else 2
-        after = 8 if idx == len(quote_lines) - 1 else 2
-        set_paragraph_spacing(paragraph, before=before, after=after, line=1.35)
-        set_paragraph_callout_style(paragraph, fill_color="F8FAFC", border_color="0C1A32")
-        
-        # 检查是否为引用块内部的列表项 (如 > 1. xxx 或 > - xxx)
-        numbered_match = re.match(r"^(\d+)\.\s+(.+)$", line_text)
-        bullet_match = re.match(r"^[-*]\s+(.+)$", line_text)
-        
-        if numbered_match:
-            num_str = numbered_match.group(1)
-            content = numbered_match.group(2)
-            prefix_run = paragraph.add_run(f"{num_str}. ")
-            set_run_font(prefix_run, size=10.5, bold=True, color=PRIMARY)
-            add_formatted_text(paragraph, content, default_size=10.5, default_color="1F2937")
-        elif bullet_match:
-            content = bullet_match.group(1)
-            prefix_run = paragraph.add_run("• ")
-            set_run_font(prefix_run, size=10.5, bold=True, color=ACCENT)
-            add_formatted_text(paragraph, content, default_size=10.5, default_color="1F2937")
+    # 检查是否全部或大部分为 Key-Value 格式 (例如 "**文档定位**：xxx" 或 "**适用周期**：xxx")
+    kv_pairs = []
+    is_kv = True
+    for line in quote_lines:
+        m = re.match(r"^\*{0,2}([\u4e00-\u9fa5a-zA-Z0-9_（）\s]{2,12})\*{0,2}[：:]\s*(.+)$", line.strip())
+        if m:
+            key = clean_inline(m.group(1))
+            val = m.group(2).strip()
+            kv_pairs.append((key, val))
         else:
-            add_formatted_text(paragraph, line_text, default_size=10.5, default_color="1F2937")
+            if kv_pairs and (line.strip().startswith("1.") or line.strip().startswith("2.") or line.strip().startswith("-") or line.strip().startswith("•")):
+                last_k, last_v = kv_pairs[-1]
+                kv_pairs[-1] = (last_k, last_v + "\n" + line.strip())
+            else:
+                is_kv = False
+                break
+                
+    if is_kv and len(kv_pairs) >= 1:
+        # 生成标准 2 列表格（左侧属性名，右侧内容）
+        table = doc.add_table(rows=len(kv_pairs), cols=2)
+        table.autofit = False
+        set_table_borders(table)
+        
+        for row_idx, (k, v) in enumerate(kv_pairs):
+            row = table.rows[row_idx]
+            
+            # 左单元格
+            c0 = row.cells[0]
+            c0.width = Cm(3.2)
+            clear_cell(c0)
+            p0 = c0.paragraphs[0]
+            p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run0 = p0.add_run(k)
+            set_run_font(run0, size=9.5, bold=True, color=PRIMARY)
+            c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            set_cell_margins(c0, top=100, start=120, bottom=100, end=120)
+            set_cell_shading(c0, "F1F5F9")
+            
+            # 右单元格
+            c1 = row.cells[1]
+            c1.width = Cm(12.6)
+            clear_cell(c1)
+            p1 = c1.paragraphs[0]
+            p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            add_formatted_text(p1, v, default_size=9.5, default_color="1F2937")
+            c1.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            set_cell_margins(c1, top=100, start=140, bottom=100, end=140)
+            set_cell_shading(c1, "FFFFFF")
+            
+        p_sp = doc.add_paragraph()
+        set_paragraph_spacing(p_sp, after=10)
+    else:
+        # 自由文本摘要：生成单格精致摘要边框表格
+        table = doc.add_table(rows=1, cols=1)
+        table.autofit = True
+        set_table_borders(table)
+        cell = table.rows[0].cells[0]
+        clear_cell(cell)
+        set_cell_margins(cell, top=140, start=160, bottom=140, end=160)
+        set_cell_shading(cell, "F8FAFC")
+        
+        for idx, line in enumerate(quote_lines):
+            p = cell.paragraphs[0] if idx == 0 else cell.add_paragraph()
+            set_paragraph_spacing(p, before=2 if idx > 0 else 0, after=2, line=1.35)
+            add_formatted_text(p, line, default_size=10, default_color="1F2937")
+            
+        p_sp = doc.add_paragraph()
+        set_paragraph_spacing(p_sp, after=10)
 
 
 def configure_styles(doc: Document):
@@ -238,152 +278,38 @@ def configure_styles(doc: Document):
     doc.styles["Heading 3"].font.size = Pt(12)
 
 
-def set_paragraph_spacing(paragraph, before=0, after=8, line=1.35):
+def set_paragraph_spacing(paragraph, before=0, after=6, line=1.35):
     fmt = paragraph.paragraph_format
     fmt.space_before = Pt(before)
     fmt.space_after = Pt(after)
     fmt.line_spacing = line
 
 
-def add_bookmark(paragraph, name: str, bookmark_id: int):
-    tag_start = OxmlElement('w:bookmarkStart')
-    tag_start.set(qn('w:id'), str(bookmark_id))
-    tag_start.set(qn('w:name'), name)
-    tag_end = OxmlElement('w:bookmarkEnd')
-    tag_end.set(qn('w:id'), str(bookmark_id))
-    paragraph._p.append(tag_start)
-    paragraph._p.append(tag_end)
-
-
-def add_hyperlink_to_bookmark(paragraph, text: str, bookmark_name: str, level: int = 1):
-    indent_cm = 0.2 if level == 1 else (0.6 if level == 2 else 1.0)
-    paragraph.paragraph_format.left_indent = Cm(indent_cm)
-    set_paragraph_spacing(paragraph, after=4, line=1.25)
-    
-    hyperlink = OxmlElement('w:hyperlink')
-    hyperlink.set(qn('w:anchor'), bookmark_name)
-    hyperlink.set(qn('w:history'), '1')
-    
-    new_run = OxmlElement('w:r')
-    rPr = OxmlElement('w:rPr')
-    
-    # 字体与颜色
-    rFonts = OxmlElement('w:rFonts')
-    rFonts.set(qn('w:ascii'), WEST_FONT)
-    rFonts.set(qn('w:eastAsia'), BODY_FONT)
-    rPr.append(rFonts)
-    
-    color = OxmlElement('w:color')
-    color.set(qn('w:val'), '0284C7')
-    rPr.append(color)
-    
-    sz = OxmlElement('w:sz')
-    sz.set(qn('w:val'), '21' if level == 1 else '20')
-    rPr.append(sz)
-    
-    if level == 1:
-        b = OxmlElement('w:b')
-        rPr.append(b)
-        
-    new_run.append(rPr)
-    
-    text_node = OxmlElement('w:t')
-    text_node.text = text
-    new_run.append(text_node)
-    
-    hyperlink.append(new_run)
-    paragraph._p.append(hyperlink)
-
-
-def add_native_toc_field(paragraph):
-    set_paragraph_spacing(paragraph, before=6, after=12)
-    run = paragraph.add_run()
-    fldChar1 = OxmlElement('w:fldChar')
-    fldChar1.set(qn('w:fldCharType'), 'begin')
-    instrText = OxmlElement('w:instrText')
-    instrText.set(qn('xml:space'), 'preserve')
-    instrText.text = 'TOC \\o "1-3" \\h \\z \\u'
-    fldChar2 = OxmlElement('w:fldChar')
-    fldChar2.set(qn('w:fldCharType'), 'separate')
-    fldChar3 = OxmlElement('w:fldChar')
-    fldChar3.set(qn('w:fldCharType'), 'end')
-    r = run._r
-    r.append(fldChar1)
-    r.append(instrText)
-    r.append(fldChar2)
-    r.append(fldChar3)
-
-
-def write_cell(cell, text: str, header: bool = False, zebra: bool = False):
-    clear_cell(cell)
-    paragraph = cell.paragraphs[0]
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    
-    # 允许单元格中解析行内粗体与 <br> 换行
-    add_formatted_text(paragraph, text, default_size=9.5, default_color="FFFFFF" if header else "1F2937", force_bold=header)
-    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-    set_cell_margins(cell, top=130, start=150, bottom=130, end=150)
-    
-    if header:
-        set_cell_shading(cell, TABLE_HEADER_BG)
-    elif zebra:
-        set_cell_shading(cell, "F8FAFC")
-    else:
-        set_cell_shading(cell, "FFFFFF")
-
-
-def add_table(doc: Document, rows: list[list[str]]):
-    if not rows:
-        return
-    width = max(len(row) for row in rows)
-    table = doc.add_table(rows=len(rows), cols=width)
-    table.autofit = True
-    set_table_borders(table)
-    
-    for row_index, row in enumerate(rows):
-        is_header = (row_index == 0)
-        is_zebra = (row_index % 2 == 1 and not is_header)
-        for col_index in range(width):
-            text = row[col_index] if col_index < len(row) else ""
-            write_cell(table.rows[row_index].cells[col_index], text, header=is_header, zebra=is_zebra)
-            
-    paragraph = doc.add_paragraph()
-    set_paragraph_spacing(paragraph, after=10)
-
-
-def add_heading(doc: Document, text: str, level: int, bookmark_name: str | None = None, bookmark_id: int = 0):
+def add_heading(doc: Document, text: str, level: int):
     clean_title = clean_inline(text)
     
     if level == 1:
-        # 大标题 (H1)
+        # 大标题 (H1) 居中排版
         paragraph = doc.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        set_paragraph_spacing(paragraph, before=6, after=14, line=1.15)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        set_paragraph_spacing(paragraph, before=10, after=16, line=1.2)
         run = paragraph.add_run(clean_title)
         set_run_font(run, size=22, bold=True, color=PRIMARY)
-
-        if bookmark_name:
-            add_bookmark(paragraph, bookmark_name, bookmark_id)
         return
 
-    # 二级与三级标题
+    # 二级与三级标题（标准规范/论文排版：简洁、大气、层次分明）
     paragraph = doc.add_heading(clean_title, level=min(level, 3))
     
     if level == 2:
-        # 二级标题 (H2)：加上边框装饰与背景衬底
-        set_paragraph_spacing(paragraph, before=18, after=8, line=1.25)
-        set_paragraph_callout_style(paragraph, fill_color="F1F5F9", border_color=PRIMARY)
-        paragraph.paragraph_format.left_indent = Cm(0.2)
+        # 二级标题 (H2)
+        set_paragraph_spacing(paragraph, before=16, after=6, line=1.25)
         for run in paragraph.runs:
             set_run_font(run, size=14.5, bold=True, color=PRIMARY)
     else:
         # 三级标题 (H3)
-        set_paragraph_spacing(paragraph, before=12, after=6, line=1.2)
+        set_paragraph_spacing(paragraph, before=10, after=4, line=1.2)
         for run in paragraph.runs:
-            set_run_font(run, size=12, bold=True, color=ACCENT)
-
-    if bookmark_name:
-        add_bookmark(paragraph, bookmark_name, bookmark_id)
+            set_run_font(run, size=12.5, bold=True, color="1E293B")
 
 
 def add_body_paragraph(doc: Document, text: str):
@@ -624,54 +550,13 @@ def convert(md_path: Path, output_path: Path):
 
     lines = md_path.read_text(encoding="utf-8").splitlines()
 
-    # 预扫描所有标题，建立索引字典
-    collected_headings = []
-    heading_counter = 0
-    heading_map = {}
-    for idx, raw in enumerate(lines):
-        l = raw.strip()
-        m1 = re.match(r"^(#{1,6})\s+(.+)$", l)
-        m2 = re.match(r"^<h([1-6])>(.+?)</h\1>$", l)
-        if m1:
-            level = len(m1.group(1))
-            text = clean_inline(m1.group(2))
-            heading_counter += 1
-            bname = f"_TocHeading_{heading_counter}"
-            collected_headings.append((text, level, bname, heading_counter, idx))
-            heading_map[idx] = (bname, heading_counter)
-        elif m2:
-            level = int(m2.group(1))
-            text = clean_inline(m2.group(2))
-            heading_counter += 1
-            bname = f"_TocHeading_{heading_counter}"
-            collected_headings.append((text, level, bname, heading_counter, idx))
-            heading_map[idx] = (bname, heading_counter)
+def convert(md_path: Path, output_path: Path):
+    doc = Document()
+    configure_styles(doc)
+    add_footer(doc)
 
+    lines = md_path.read_text(encoding="utf-8").splitlines()
     index = 0
-    toc_inserted = False
-
-    # 闭包：插入超链接目录
-    def insert_toc():
-        nonlocal toc_inserted
-        if toc_inserted or not collected_headings:
-            return
-        toc_inserted = True
-
-        toc_heading = doc.add_paragraph()
-        set_paragraph_spacing(toc_heading, before=10, after=10)
-        toc_run = toc_heading.add_run("目录 / Table of Contents")
-        set_run_font(toc_run, size=14, bold=True, color=PRIMARY)
-
-        for h_text, h_level, h_bname, _, _ in collected_headings:
-            if h_level <= 3:
-                p = doc.add_paragraph()
-                add_hyperlink_to_bookmark(p, h_text, h_bname, level=h_level)
-
-        p_native = doc.add_paragraph()
-        add_native_toc_field(p_native)
-
-        sep_p = doc.add_paragraph()
-        set_paragraph_spacing(sep_p, after=14)
 
     while index < len(lines):
         raw = lines[index]
@@ -685,8 +570,6 @@ def convert(md_path: Path, output_path: Path):
             continue
 
         if line.startswith("|") and line.endswith("|"):
-            if not toc_inserted:
-                insert_toc()
             rows, index = parse_table(lines, index)
             add_table(doc, rows)
             continue
@@ -695,46 +578,28 @@ def convert(md_path: Path, output_path: Path):
         if heading:
             level = len(heading.group(1))
             text = heading.group(2)
-            binfo = heading_map.get(index)
-            bname, bid = binfo if binfo else (None, 0)
-            
-            add_heading(doc, text, level, bookmark_name=bname, bookmark_id=bid)
-            
-            # 如果是一级大标题 (H1)，目录插在 H1 之后；如果是 H2/H3，且目录尚未插入，直接插在最前方
-            if level == 1 and not toc_inserted:
-                insert_toc()
-            elif level > 1 and not toc_inserted:
-                insert_toc()
-                
+            add_heading(doc, text, level)
             index += 1
             continue
 
         if line.startswith("!["):
-            if not toc_inserted:
-                insert_toc()
             add_image(doc, md_path, line)
             index += 1
             continue
 
         bullet = re.match(r"^[-*]\s+(.+)$", line)
         if bullet:
-            if not toc_inserted:
-                insert_toc()
             add_bullet(doc, bullet.group(1))
             index += 1
             continue
 
         numbered = re.match(r"^(\d+)\.\s+(.+)$", line)
         if numbered:
-            if not toc_inserted:
-                insert_toc()
             add_numbered(doc, numbered.group(1), numbered.group(2))
             index += 1
             continue
 
         if line.startswith("> "):
-            if not toc_inserted:
-                insert_toc()
             quote_lines = []
             while index < len(lines) and lines[index].strip().startswith("> "):
                 quote_lines.append(lines[index].strip()[2:].strip())
@@ -743,8 +608,6 @@ def convert(md_path: Path, output_path: Path):
             continue
 
         if line.startswith("```"):
-            if not toc_inserted:
-                insert_toc()
             if line.startswith("```mermaid"):
                 mermaid_lines = []
                 index += 1
@@ -770,27 +633,18 @@ def convert(md_path: Path, output_path: Path):
         if html_heading:
             level = int(html_heading.group(1))
             text = html_heading.group(2)
-            binfo = heading_map.get(index)
-            bname, bid = binfo if binfo else (None, 0)
-            
-            add_heading(doc, text, level, bookmark_name=bname, bookmark_id=bid)
-            if not toc_inserted:
-                insert_toc()
+            add_heading(doc, text, level)
             index += 1
             continue
 
         # 剥离简单的 <p> 标签包围
         if line.startswith("<p>") and line.endswith("</p>"):
             line = line[3:-4]
-            # 如果里面还有标签，会在 clean_inline 里被剥离
             
         # 如果是 HTML 注释，直接跳过
         if line.startswith("<!--") and line.endswith("-->"):
             index += 1
             continue
-
-        if not toc_inserted:
-            insert_toc()
 
         add_body_paragraph(doc, line)
         index += 1
