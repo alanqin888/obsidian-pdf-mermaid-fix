@@ -53,7 +53,7 @@ var PdfMermaidFixPlugin = class extends import_obsidian.Plugin {
         const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
         if (markdownView && markdownView.file) {
           if (!checking) {
-            this.exportToWord(markdownView.file);
+            void this.exportToWord(markdownView.file);
           }
           return true;
         }
@@ -61,13 +61,13 @@ var PdfMermaidFixPlugin = class extends import_obsidian.Plugin {
       }
     });
     this.addCommand({
-      id: "export-to-pdf-mermaid-fix",
-      name: "Export active file to PDF (Mermaid Fix)",
+      id: "export-to-pdf",
+      name: "Export active file to PDF (Direct Engine)",
       checkCallback: (checking) => {
         const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
         if (markdownView && markdownView.file) {
           if (!checking) {
-            this.exportToPdf(markdownView.file);
+            void this.exportToPdf(markdownView.file);
           }
           return true;
         }
@@ -78,33 +78,41 @@ var PdfMermaidFixPlugin = class extends import_obsidian.Plugin {
       this.app.workspace.on("file-menu", (menu, file) => {
         if (file instanceof import_obsidian.TFile && file.extension === "md") {
           menu.addItem((item) => {
-            item.setTitle("Export to Word").setIcon("document").onClick(() => this.exportToWord(file));
+            item.setTitle("Export to Word").setIcon("document").onClick(() => {
+              void this.exportToWord(file);
+            });
           });
           menu.addItem((item) => {
-            item.setTitle("Export to PDF (Mermaid Fix)").setIcon("pdf-file").onClick(() => this.exportToPdf(file));
+            item.setTitle("Export to PDF (Direct Engine)").setIcon("pdf-file").onClick(() => {
+              void this.exportToPdf(file);
+            });
           });
         }
       })
     );
     this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu, editor, view) => {
-        if (view && view.file) {
-          const file = view.file;
+      this.app.workspace.on("editor-menu", (menu) => {
+        const activeView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
+        if (activeView && activeView.file) {
           menu.addItem((item) => {
-            item.setTitle("Export to Word").setIcon("document").onClick(() => this.exportToWord(file));
+            item.setTitle("Export to Word").setIcon("document").onClick(() => {
+              if (activeView.file) {
+                void this.exportToWord(activeView.file);
+              }
+            });
           });
           menu.addItem((item) => {
-            item.setTitle("Export to PDF (Mermaid Fix)").setIcon("pdf-file").onClick(() => this.exportToPdf(file));
+            item.setTitle("Export to PDF (Direct Engine)").setIcon("pdf-file").onClick(() => {
+              if (activeView.file) {
+                void this.exportToPdf(activeView.file);
+              }
+            });
           });
         }
       })
     );
   }
   onunload() {
-    const styleEl = document.getElementById("mermaid-pdf-fix");
-    if (styleEl) {
-      styleEl.remove();
-    }
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -113,65 +121,97 @@ var PdfMermaidFixPlugin = class extends import_obsidian.Plugin {
     await this.saveData(this.settings);
   }
   async exportToPdf(file) {
-    new import_obsidian.Notice("Applying Mermaid PDF Fix and opening native export...");
+    new import_obsidian.Notice("Starting High-Quality PDF export...");
     try {
-      let styleEl = document.getElementById("mermaid-pdf-fix");
-      if (!styleEl) {
-        styleEl = document.createElement("style");
-        styleEl.id = "mermaid-pdf-fix";
-        styleEl.textContent = `
-				@media print {
-					.mermaid svg {
-						max-width: 100% !important;
-						height: auto !important;
-						page-break-inside: avoid;
-					}
-				}
-				`;
-        document.head.appendChild(styleEl);
+      const adapter = this.app.vault.adapter;
+      if (!(adapter instanceof import_obsidian.FileSystemAdapter)) {
+        new import_obsidian.Notice("Error: Cannot determine vault absolute path.");
+        return;
       }
-      const activeView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
-      if (activeView && activeView.file === file) {
-        this.app.commands.executeCommandById("workspace:export-pdf");
-      } else {
-        new import_obsidian.Notice("Please open the file to export it to PDF.");
-      }
+      const basePath = adapter.getBasePath();
+      const absoluteInputPath = path.join(basePath, file.path);
+      const absoluteOutputPath = absoluteInputPath.replace(/\.md$/, ".pdf");
+      const pluginDir = path.join(basePath, this.app.vault.configDir, "plugins", this.manifest.id);
+      const scriptPath = path.join(pluginDir, "render_pdf.js");
+      const nodePaths = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "node"];
+      const tryRun = (index) => {
+        if (index >= nodePaths.length) {
+          new import_obsidian.Notice("PDF export failed. Node runtime not found.");
+          return;
+        }
+        const nodeBin = nodePaths[index];
+        const cmd = `"${nodeBin}" "${scriptPath}" "${absoluteInputPath}" "${absoluteOutputPath}"`;
+        (0, import_child_process.exec)(cmd, (error, stdout, stderr) => {
+          if (error) {
+            if (error.code === 127 || error.message.includes("not found") || error.message.includes("ENOENT")) {
+              tryRun(index + 1);
+              return;
+            }
+            console.error(`PDF export error: ${error.message}
+${stderr}`);
+            new import_obsidian.Notice(`PDF export failed: ${error.message}`);
+            return;
+          }
+          new import_obsidian.Notice("PDF export complete! Saved as: " + file.path.replace(/\.md$/, ".pdf"));
+        });
+      };
+      tryRun(0);
     } catch (error) {
-      console.error(error);
-      new import_obsidian.Notice("Failed to trigger PDF export");
+      const err = error;
+      console.error("Failed to export PDF:", err);
+      new import_obsidian.Notice(`Failed to export PDF: ${err.message}`);
     }
   }
   async exportToWord(file) {
-    if (!this.settings.pythonScriptPath) {
-      new import_obsidian.Notice("Please configure the Python script path in settings first.");
-      return;
-    }
     new import_obsidian.Notice("Starting Word export via Python script...");
     try {
       const adapter = this.app.vault.adapter;
-      if (!adapter.getBasePath) {
+      if (!(adapter instanceof import_obsidian.FileSystemAdapter)) {
         new import_obsidian.Notice("Error: Cannot determine vault absolute path.");
         return;
       }
       const basePath = adapter.getBasePath();
       const absoluteInputPath = path.join(basePath, file.path);
       const absoluteOutputPath = absoluteInputPath.replace(/\.md$/, ".docx");
-      const scriptPath = this.settings.pythonScriptPath;
-      const cmd = `python3 "${scriptPath}" "${absoluteInputPath}" -o "${absoluteOutputPath}"`;
-      (0, import_child_process.exec)(cmd, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`exec error: ${error}`);
-          new import_obsidian.Notice("Word export failed. Check console for details.");
+      const pluginDir = path.join(basePath, this.app.vault.configDir, "plugins", this.manifest.id);
+      const bundledScriptPath = path.join(pluginDir, "md_to_docx.py");
+      const scriptPath = this.settings.pythonScriptPath || bundledScriptPath;
+      const pythonPaths = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "python3"];
+      const tryRun = (index) => {
+        if (index >= pythonPaths.length) {
+          new import_obsidian.Notice("Word export failed. Python3 not found in standard paths.");
           return;
         }
-        if (stderr) {
-          console.warn(`stderr: ${stderr}`);
-        }
-        new import_obsidian.Notice("Word export complete! Saved as: " + file.path.replace(/\.md$/, ".docx"));
-      });
+        const py = pythonPaths[index];
+        const cmd = `"${py}" "${scriptPath}" "${absoluteInputPath}" -o "${absoluteOutputPath}"`;
+        (0, import_child_process.exec)(cmd, (error, stdout, stderr) => {
+          if (error) {
+            console.error(`exec error with ${py}: ${error.message}`);
+            if (error.code === 127 || error.message.includes("not found") || error.message.includes("ENOENT")) {
+              tryRun(index + 1);
+              return;
+            }
+            const fullErr = error.message + "\n" + (stderr || "");
+            if (fullErr.includes("No module named 'docx'")) {
+              new import_obsidian.Notice('Word export failed: Missing Python package "python-docx". Please run "pip install python-docx Pillow" in terminal.', 1e4);
+            } else if (fullErr.includes("No module named 'PIL'") || fullErr.includes("No module named 'Pillow'")) {
+              new import_obsidian.Notice('Word export failed: Missing Python package "Pillow". Please run "pip install python-docx Pillow" in terminal.', 1e4);
+            } else {
+              new import_obsidian.Notice(`Word export failed: ${error.message}`);
+            }
+            return;
+          }
+          if (stderr) {
+            console.warn(`stderr: ${stderr}`);
+          }
+          new import_obsidian.Notice("Word export complete! Saved as: " + file.path.replace(/\.md$/, ".docx"));
+        });
+      };
+      tryRun(0);
     } catch (error) {
-      console.error(error);
-      new import_obsidian.Notice("An error occurred while preparing Word export.");
+      const err = error;
+      console.error(err);
+      new import_obsidian.Notice(`An error occurred while preparing Word export: ${err.message}`);
     }
   }
 };
@@ -183,7 +223,7 @@ var MdExportSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("Python script path").setDesc("Absolute path to your md_to_docx.py script (Required for Word export).").addText((text) => text.setPlaceholder("/path/to/md_to_docx.py").setValue(this.plugin.settings.pythonScriptPath).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Python script path").setDesc("Absolute path to your md_to_docx.py script (Leave empty to use the built-in bundled script).").addText((text) => text.setPlaceholder("Leave empty to use default bundled script").setValue(this.plugin.settings.pythonScriptPath).onChange(async (value) => {
       this.plugin.settings.pythonScriptPath = value;
       await this.plugin.saveSettings();
     }));

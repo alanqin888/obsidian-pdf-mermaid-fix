@@ -41,7 +41,7 @@ export default class PdfMermaidFixPlugin extends Plugin {
 
 		this.addCommand({
 			id: 'export-to-pdf',
-			name: 'Export active file to PDF (Mermaid Fix)',
+			name: 'Export active file to PDF (Direct Engine)',
 			checkCallback: (checking: boolean) => {
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (markdownView && markdownView.file) {
@@ -66,7 +66,7 @@ export default class PdfMermaidFixPlugin extends Plugin {
 							});
 					});
 					menu.addItem((item) => {
-						item.setTitle('Export to PDF (Mermaid Fix)')
+						item.setTitle('Export to PDF (Direct Engine)')
 							.setIcon('pdf-file')
 							.onClick(() => {
 								void this.exportToPdf(file);
@@ -76,23 +76,27 @@ export default class PdfMermaidFixPlugin extends Plugin {
 			})
 		);
 
-		// 注册编辑器右键菜单
+		// 注册编辑器标题栏更多菜单
 		this.registerEvent(
-			this.app.workspace.on('editor-menu', (menu, editor, view) => {
-				if (view && view.file) {
-					const file = view.file;
+			this.app.workspace.on('editor-menu', (menu) => {
+				const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (activeView && activeView.file) {
 					menu.addItem((item) => {
 						item.setTitle('Export to Word')
 							.setIcon('document')
 							.onClick(() => {
-								void this.exportToWord(file);
+								if (activeView.file) {
+									void this.exportToWord(activeView.file);
+								}
 							});
 					});
 					menu.addItem((item) => {
-						item.setTitle('Export to PDF (Mermaid Fix)')
+						item.setTitle('Export to PDF (Direct Engine)')
 							.setIcon('pdf-file')
 							.onClick(() => {
-								void this.exportToPdf(file);
+								if (activeView.file) {
+									void this.exportToPdf(activeView.file);
+								}
 							});
 					});
 				}
@@ -101,7 +105,7 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	}
 
 	onunload() {
-		// No style elements to clean up because we use static styles.css
+		// Cleanup
 	}
 
 	async loadSettings() {
@@ -113,20 +117,49 @@ export default class PdfMermaidFixPlugin extends Plugin {
 	}
 
 	async exportToPdf(file: TFile) {
-		new Notice('Applying Mermaid PDF Fix for export...');
+		new Notice('Starting High-Quality PDF export...');
 		try {
-			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (!activeView || activeView.file !== file) {
-				new Notice('Please open the file to export it to PDF.');
+			const adapter = this.app.vault.adapter;
+			if (!(adapter instanceof FileSystemAdapter)) {
+				new Notice('Error: Cannot determine vault absolute path.');
 				return;
 			}
+			const basePath = adapter.getBasePath();
+			const absoluteInputPath = path.join(basePath, file.path);
+			const absoluteOutputPath = absoluteInputPath.replace(/\.md$/, '.pdf');
 
-			// 直接调用 Obsidian 原生 PDF 导出命令，由 styles.css 的 @media print 规则统一排版
-			(this.app as ObsidianApp).commands.executeCommandById('workspace:export-pdf');
+			const pluginDir = path.join(basePath, this.app.vault.configDir, 'plugins', this.manifest.id);
+			const scriptPath = path.join(pluginDir, 'render_pdf.js');
+
+			const nodePaths = ['/opt/homebrew/bin/node', '/usr/local/bin/node', 'node'];
+
+			const tryRun = (index: number) => {
+				if (index >= nodePaths.length) {
+					new Notice('PDF export failed. Node runtime not found.');
+					return;
+				}
+				const nodeBin = nodePaths[index];
+				const cmd = `"${nodeBin}" "${scriptPath}" "${absoluteInputPath}" "${absoluteOutputPath}"`;
+
+				exec(cmd, (error, stdout, stderr) => {
+					if (error) {
+						if (error.code === 127 || error.message.includes('not found') || error.message.includes('ENOENT')) {
+							tryRun(index + 1);
+							return;
+						}
+						console.error(`PDF export error: ${error.message}\n${stderr}`);
+						new Notice(`PDF export failed: ${error.message}`);
+						return;
+					}
+					new Notice('PDF export complete! Saved as: ' + file.path.replace(/\.md$/, '.pdf'));
+				});
+			};
+
+			tryRun(0);
 		} catch (error) {
 			const err = error as Error;
-			console.error('Failed to trigger PDF export:', err);
-			new Notice(`Failed to trigger PDF export: ${err.message}`);
+			console.error('Failed to export PDF:', err);
+			new Notice(`Failed to export PDF: ${err.message}`);
 		}
 	}
 
