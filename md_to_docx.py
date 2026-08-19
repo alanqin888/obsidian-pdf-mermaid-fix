@@ -179,7 +179,7 @@ def set_paragraph_callout_style(paragraph, fill_color="F8FAFC", border_color="0C
     pPr.append(pBdr)
 
 
-def add_quote_block(doc: Document, quote_lines: list[str]):
+def add_quote_block(doc: Document, quote_lines: list[str], is_cover: bool = False):
     if not quote_lines:
         return
     
@@ -201,7 +201,11 @@ def add_quote_block(doc: Document, quote_lines: list[str]):
                 break
                 
     if is_kv and len(kv_pairs) >= 1:
-        # 生成标准 2 列表格（左侧属性名，右侧内容）
+        # 如果是封面元数据表，前面加入优雅的下沉间距
+        if is_cover:
+            spacer = doc.add_paragraph()
+            set_paragraph_spacing(spacer, before=36, after=0)
+            
         table = doc.add_table(rows=len(kv_pairs), cols=2)
         table.autofit = False
         set_table_borders(table)
@@ -216,9 +220,9 @@ def add_quote_block(doc: Document, quote_lines: list[str]):
             p0 = c0.paragraphs[0]
             p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run0 = p0.add_run(k)
-            set_run_font(run0, size=9.5, bold=True, color=PRIMARY)
+            set_run_font(run0, size=10, bold=True, color=PRIMARY)
             c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            set_cell_margins(c0, top=100, start=120, bottom=100, end=120)
+            set_cell_margins(c0, top=120, start=120, bottom=120, end=120)
             set_cell_shading(c0, "F1F5F9")
             
             # 右单元格
@@ -227,15 +231,23 @@ def add_quote_block(doc: Document, quote_lines: list[str]):
             clear_cell(c1)
             p1 = c1.paragraphs[0]
             p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            add_formatted_text(p1, v, default_size=9.5, default_color="1F2937")
+            add_formatted_text(p1, v, default_size=10, default_color="1F2937")
             c1.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            set_cell_margins(c1, top=100, start=140, bottom=100, end=140)
+            set_cell_margins(c1, top=120, start=140, bottom=120, end=140)
             set_cell_shading(c1, "FFFFFF")
             
-        p_sp = doc.add_paragraph()
-        set_paragraph_spacing(p_sp, after=10)
+        if is_cover:
+            # 封面结束，自动插入标准分页符，进入正文第 2 页！
+            doc.add_page_break()
+        else:
+            p_sp = doc.add_paragraph()
+            set_paragraph_spacing(p_sp, after=10)
     else:
         # 自由文本摘要：生成单格精致摘要边框表格
+        if is_cover:
+            spacer = doc.add_paragraph()
+            set_paragraph_spacing(spacer, before=36, after=0)
+            
         table = doc.add_table(rows=1, cols=1)
         table.autofit = True
         set_table_borders(table)
@@ -249,8 +261,11 @@ def add_quote_block(doc: Document, quote_lines: list[str]):
             set_paragraph_spacing(p, before=2 if idx > 0 else 0, after=2, line=1.35)
             add_formatted_text(p, line, default_size=10, default_color="1F2937")
             
-        p_sp = doc.add_paragraph()
-        set_paragraph_spacing(p_sp, after=10)
+        if is_cover:
+            doc.add_page_break()
+        else:
+            p_sp = doc.add_paragraph()
+            set_paragraph_spacing(p_sp, after=10)
 
 
 def configure_styles(doc: Document):
@@ -285,16 +300,16 @@ def set_paragraph_spacing(paragraph, before=0, after=6, line=1.35):
     fmt.line_spacing = line
 
 
-def add_heading(doc: Document, text: str, level: int):
+def add_heading(doc: Document, text: str, level: int, is_cover: bool = False):
     clean_title = clean_inline(text)
     
     if level == 1:
-        # 大标题 (H1) 居中排版
+        # 大标题 (H1) 居中排版；作为封面大标题时下沉并加大字号
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        set_paragraph_spacing(paragraph, before=10, after=16, line=1.2)
+        set_paragraph_spacing(paragraph, before=60 if is_cover else 10, after=36 if is_cover else 16, line=1.2)
         run = paragraph.add_run(clean_title)
-        set_run_font(run, size=22, bold=True, color=PRIMARY)
+        set_run_font(run, size=24 if is_cover else 22, bold=True, color=PRIMARY)
         return
 
     # 二级与三级标题（标准规范/论文排版：简洁、大气、层次分明）
@@ -302,12 +317,12 @@ def add_heading(doc: Document, text: str, level: int):
     
     if level == 2:
         # 二级标题 (H2)
-        set_paragraph_spacing(paragraph, before=16, after=6, line=1.25)
+        set_paragraph_spacing(paragraph, before=18, after=6, line=1.25)
         for run in paragraph.runs:
-            set_run_font(run, size=14.5, bold=True, color=PRIMARY)
+            set_run_font(run, size=15, bold=True, color=PRIMARY)
     else:
         # 三级标题 (H3)
-        set_paragraph_spacing(paragraph, before=10, after=4, line=1.2)
+        set_paragraph_spacing(paragraph, before=12, after=4, line=1.2)
         for run in paragraph.runs:
             set_run_font(run, size=12.5, bold=True, color="1E293B")
 
@@ -549,14 +564,31 @@ def convert(md_path: Path, output_path: Path):
     add_footer(doc)
 
     lines = md_path.read_text(encoding="utf-8").splitlines()
+    
+    # 检测前部是否存在封面元数据结构 (H1 紧跟引用块元数据)
+    has_cover_structure = False
+    first_h1_idx = -1
+    first_quote_idx = -1
+    first_h2_idx = 999999
+    
+    for idx, raw in enumerate(lines):
+        l = raw.strip()
+        if not l:
+            continue
+        if re.match(r"^#\s+", l) and first_h1_idx == -1:
+            first_h1_idx = idx
+        elif re.match(r"^##\s+", l):
+            first_h2_idx = idx
+            break
+        elif l.startswith("> ") and first_quote_idx == -1:
+            first_quote_idx = idx
+            
+    if first_h1_idx != -1 and first_quote_idx != -1 and first_h1_idx < first_quote_idx < first_h2_idx:
+        has_cover_structure = True
 
-def convert(md_path: Path, output_path: Path):
-    doc = Document()
-    configure_styles(doc)
-    add_footer(doc)
-
-    lines = md_path.read_text(encoding="utf-8").splitlines()
     index = 0
+    h1_rendered = False
+    cover_quote_rendered = False
 
     while index < len(lines):
         raw = lines[index]
@@ -578,7 +610,10 @@ def convert(md_path: Path, output_path: Path):
         if heading:
             level = len(heading.group(1))
             text = heading.group(2)
-            add_heading(doc, text, level)
+            is_cover_h1 = (level == 1 and has_cover_structure and not h1_rendered)
+            add_heading(doc, text, level, is_cover=is_cover_h1)
+            if level == 1:
+                h1_rendered = True
             index += 1
             continue
 
@@ -604,7 +639,9 @@ def convert(md_path: Path, output_path: Path):
             while index < len(lines) and lines[index].strip().startswith("> "):
                 quote_lines.append(lines[index].strip()[2:].strip())
                 index += 1
-            add_quote_block(doc, quote_lines)
+            is_cover_quote = (has_cover_structure and not cover_quote_rendered)
+            add_quote_block(doc, quote_lines, is_cover=is_cover_quote)
+            cover_quote_rendered = True
             continue
 
         if line.startswith("```"):
