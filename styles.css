@@ -1,4 +1,16 @@
 @media print {
+	/* 大标题居中与封面质感 (Centered Main Title) */
+	h1:first-of-type,
+	.markdown-rendered h1:first-of-type,
+	.markdown-preview-view h1:first-of-type {
+		text-align: center !important;
+		margin-top: 40px !important;
+		margin-bottom: 25px !important;
+		font-size: 24pt !important;
+		color: #0c1a32 !important;
+		font-weight: bold !important;
+	}
+
 	/* 防止标题及其包裹层孤立在页尾 (Avoid orphan headings) */
 	h1, h2, h3, h4, h5, h6,
 	.heading-wrapper,
@@ -37,58 +49,5 @@
 		break-inside: avoid !important;
 		page-break-inside: avoid !important;
 	}
-
-	/* 自动目录 (PDF Table of Contents) 打印样式 */
-	.pdf-toc-container {
-		display: block !important;
-		margin-bottom: 2em !important;
-		padding: 1.5em 1.8em !important;
-		background-color: #f8fafc !important;
-		border: 1px solid #e2e8f0 !important;
-		border-radius: 6px !important;
-		break-after: always !important;
-		page-break-after: always !important;
-	}
-
-	.pdf-toc-title {
-		font-size: 1.4em !important;
-		font-weight: bold !important;
-		color: #0c1a32 !important;
-		margin-bottom: 1em !important;
-		padding-bottom: 0.4em !important;
-		border-bottom: 2px solid #ff5722 !important;
-	}
-
-	.pdf-toc-list {
-		list-style: none !important;
-		padding-left: 0 !important;
-		margin: 0 !important;
-	}
-
-	.pdf-toc-item {
-		margin-bottom: 0.6em !important;
-		line-height: 1.4 !important;
-	}
-
-	.pdf-toc-item-h1 {
-		font-size: 1.1em !important;
-		font-weight: bold !important;
-		margin-top: 0.8em !important;
-	}
-
-	.pdf-toc-item-h2 {
-		font-size: 1em !important;
-		padding-left: 1.2em !important;
-	}
-
-	.pdf-toc-item-h3 {
-		font-size: 0.9em !important;
-		padding-left: 2.4em !important;
-		color: #64748b !important;
-	}
-
-	.pdf-toc-link {
-		color: #0284c7 !important;
-		text-decoration: none !important;
-	}
 }
+
