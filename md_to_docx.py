@@ -565,11 +565,12 @@ def convert(md_path: Path, output_path: Path):
 
     lines = md_path.read_text(encoding="utf-8").splitlines()
     
-    # 检测前部是否存在封面元数据结构 (H1 紧跟引用块元数据)
+    # 检测前部是否存在封面元数据结构 (H1 紧跟元数据属性，无论是否带 > 引用前缀)
     has_cover_structure = False
     first_h1_idx = -1
-    first_quote_idx = -1
     first_h2_idx = 999999
+    cover_meta_lines = []
+    cover_meta_indices = set()
     
     for idx, raw in enumerate(lines):
         l = raw.strip()
@@ -577,20 +578,38 @@ def convert(md_path: Path, output_path: Path):
             continue
         if re.match(r"^#\s+", l) and first_h1_idx == -1:
             first_h1_idx = idx
-        elif re.match(r"^##\s+", l):
+            continue
+        if re.match(r"^##\s+", l):
             first_h2_idx = idx
             break
-        elif l.startswith("> ") and first_quote_idx == -1:
-            first_quote_idx = idx
-            
-    if first_h1_idx != -1 and first_quote_idx != -1 and first_h1_idx < first_quote_idx < first_h2_idx:
+        if first_h1_idx != -1 and idx < first_h2_idx:
+            if re.fullmatch(r"-{3,}", l):
+                cover_meta_indices.add(idx)
+                continue
+            clean_l = l[2:].strip() if l.startswith("> ") else l
+            m = re.match(r"^\*{0,2}([\u4e00-\u9fa5a-zA-Z0-9_（）\s]{2,12})\*{0,2}[：:]\s*(.+)$", clean_l)
+            if m:
+                cover_meta_lines.append(clean_l)
+                cover_meta_indices.add(idx)
+            else:
+                break
+                
+    if first_h1_idx != -1 and len(cover_meta_lines) >= 1:
         has_cover_structure = True
 
     index = 0
     h1_rendered = False
-    cover_quote_rendered = False
+    cover_table_rendered = False
 
     while index < len(lines):
+        # 如果当前行属于封面元数据区域且不是 H1
+        if has_cover_structure and index in cover_meta_indices:
+            if not cover_table_rendered:
+                add_quote_block(doc, cover_meta_lines, is_cover=True)
+                cover_table_rendered = True
+            index += 1
+            continue
+
         raw = lines[index]
         line = raw.strip()
         if not line:
@@ -639,9 +658,7 @@ def convert(md_path: Path, output_path: Path):
             while index < len(lines) and lines[index].strip().startswith("> "):
                 quote_lines.append(lines[index].strip()[2:].strip())
                 index += 1
-            is_cover_quote = (has_cover_structure and not cover_quote_rendered)
-            add_quote_block(doc, quote_lines, is_cover=is_cover_quote)
-            cover_quote_rendered = True
+            add_quote_block(doc, quote_lines, is_cover=False)
             continue
 
         if line.startswith("```"):

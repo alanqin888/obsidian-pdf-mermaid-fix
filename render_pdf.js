@@ -9,22 +9,37 @@ async function convertMdToPdf(mdPath, outputPath) {
   const titleMatch = mdContent.match(/^#\s+(.+)$/m);
   const title = titleMatch ? titleMatch[1] : '产品规划';
   
-  // 提取引用元数据块
-  const quoteLines = [];
+  // 提取引用/顶层元数据块 (支持带 > 和不带 > 的 key-value)
   const lines = mdContent.split('\n');
-  for (const line of lines) {
-    if (line.trim().startsWith('>')) {
-      quoteLines.push(line.trim().replace(/^>\s*/, ''));
-    } else if (quoteLines.length > 0 && line.trim().startsWith('##')) {
+  const kvPairs = [];
+  const metaLinesToRemove = [];
+  let firstH1Idx = -1;
+  let firstH2Idx = 999999;
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].trim();
+    if (!l) continue;
+    if (/^#\s+/.test(l) && firstH1Idx === -1) {
+      firstH1Idx = i;
+      continue;
+    }
+    if (/^##\s+/.test(l)) {
+      firstH2Idx = i;
       break;
     }
-  }
-
-  const kvPairs = [];
-  for (const q of quoteLines) {
-    const m = q.match(/^\*{0,2}([\u4e00-\u9fa5a-zA-Z0-9_（）\s]{2,12})\*{0,2}[：:]\s*(.+)$/);
-    if (m) {
-      kvPairs.push([m[1].trim(), m[2].trim()]);
+    if (firstH1Idx !== -1 && i < firstH2Idx) {
+      if (/^-{3,}$/.test(l)) {
+        metaLinesToRemove.push(lines[i]);
+        continue;
+      }
+      const cleanL = l.startsWith('>') ? l.replace(/^>\s*/, '') : l;
+      const m = cleanL.match(/^\*{0,2}([\u4e00-\u9fa5a-zA-Z0-9_（）\s]{2,12})\*{0,2}[：:]\s*(.+)$/);
+      if (m) {
+        kvPairs.push([m[1].trim(), m[2].trim()]);
+        metaLinesToRemove.push(lines[i]);
+      } else {
+        break;
+      }
     }
   }
 
@@ -39,10 +54,10 @@ async function convertMdToPdf(mdPath, outputPath) {
     tableHtml += '</table>';
   }
 
-  // 提取正文并去除头部 H1 与 blockquote 与 ---
+  // 提取正文并去除头部 H1 与封面元数据行
   let bodyMd = mdContent.replace(/^#\s+.+$/m, '');
-  for (const q of quoteLines) {
-    bodyMd = bodyMd.replace(new RegExp('>\\s*' + q.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'm'), '');
+  for (const row of metaLinesToRemove) {
+    bodyMd = bodyMd.replace(row, '');
   }
   bodyMd = bodyMd.replace(/^\s*-{3,}\s*$/m, '');
 
